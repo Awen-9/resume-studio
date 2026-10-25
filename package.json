@@ -1,0 +1,61 @@
+{
+  "name": "resume-studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local-first resume editor and A4 PDF exporter",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1\" \"tsx server/index.ts\"",
+    "dev:web": "vite --host 127.0.0.1",
+    "setup": "node scripts/setup.mjs",
+    "doctor": "node scripts/doctor.mjs",
+    "build": "vue-tsc --noEmit && vite build && npm run server:build",
+    "start": "node dist-server/server/index.js",
+    "server:build": "tsc -p tsconfig.server.json",
+    "server:dev": "tsx server/index.ts",
+    "typecheck": "vue-tsc --noEmit && npm run server:build",
+    "lint": "eslint . --ext .ts,.vue",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "test:all": "npm run test && npm run build && npm run test:e2e",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.0",
+    "@fastify/multipart": "^10.1.6",
+    "@fastify/static": "^10.1.7",
+    "@tiptap/starter-kit": "^2.11.5",
+    "@tiptap/vue-3": "^2.11.5",
+    "docx": "^9.14.0",
+    "dotenv": "^16.6.1",
+    "fastify": "^5.2.1",
+    "pdfjs-dist": "^6.4.299",
+    "pinia": "^2.3.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.5",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-vue": "^10.0.0",
+    "jsdom": "^25.0.1",
+    "playwright": "^1.49.1",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.0",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8",
+    "vue-eslint-parser": "^10.1.1",
+    "vue-tsc": "^2.2.0"
+  }
+}
