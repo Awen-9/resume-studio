@@ -173,7 +173,9 @@ const applyFontPreset = (value: string): void => {
           :key="preset.id"
           type="button"
           class="swatch"
-          :class="{ active: document.theme.accentColor.toLowerCase() === preset.value.toLowerCase() }"
+          :class="{
+            active: document.theme.accentColor.toLowerCase() === preset.value.toLowerCase(),
+          }"
           :style="{ '--swatch-color': preset.value }"
           :title="preset.label"
           :aria-label="`强调色 ${preset.label}`"
@@ -191,7 +193,10 @@ const applyFontPreset = (value: string): void => {
         </label>
         <label
           >字体
-          <select :value="document.theme.fontFamily" @change="applyFontPreset(($event.target as HTMLSelectElement).value)">
+          <select
+            :value="document.theme.fontFamily"
+            @change="applyFontPreset(($event.target as HTMLSelectElement).value)"
+          >
             <option v-for="preset in FONT_PRESETS" :key="preset.id" :value="preset.value">
               {{ preset.label }}
             </option>

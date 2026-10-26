@@ -993,7 +993,9 @@ textarea:hover {
 
 .swatch.active {
   border-color: #20262d;
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #20262d;
+  box-shadow:
+    0 0 0 2px #fff,
+    0 0 0 4px #20262d;
 }
 
 .item-editor {

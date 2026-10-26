@@ -22,7 +22,12 @@ const run = (command, args, options = {}) => {
  * 表现为 `vite` / `rollup` 启动时报 `Cannot find module @rollup/rollup-darwin-arm64`。
  */
 const ensureRollupNative = () => {
-  const suffix = process.platform === 'darwin' ? (process.arch === 'arm64' ? 'darwin-arm64' : 'darwin-x64') : null
+  const suffix =
+    process.platform === 'darwin'
+      ? process.arch === 'arm64'
+        ? 'darwin-arm64'
+        : 'darwin-x64'
+      : null
   if (!suffix) return
   const moduleName = `@rollup/rollup-${suffix}`
   const modulePath = join('node_modules', '@rollup', `rollup-${suffix}`)
