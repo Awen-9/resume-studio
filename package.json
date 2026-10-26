@@ -31,7 +31,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
-    "@fastify/cors": "^10.0.0",
+    "@fastify/cors": "^11.3.1",
     "@fastify/multipart": "^10.1.6",
     "@fastify/static": "^10.1.7",
     "@tiptap/starter-kit": "^3.32.0",
