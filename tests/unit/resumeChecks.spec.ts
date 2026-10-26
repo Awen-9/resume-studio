@@ -1,5 +1,5 @@
-import { createDefaultDocument } from '@/data/defaultResume'
-import { checkResumeBeforeExport } from '@/lib/resumeChecks'
+import { createDefaultDocument } from '@/domain/resume/defaults'
+import { checkResumeBeforeExport } from '@/domain/resume/checks'
 
 describe('export readiness checks', () => {
   it('blocks export when required identity or layout is invalid', () => {

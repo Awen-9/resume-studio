@@ -1,4 +1,4 @@
-# 三轮迭代计划
+# 四轮迭代计划
 
 ## 第一轮：核心可靠性（已完成）
 
@@ -17,17 +17,26 @@
 - 历史版本恢复
 - 模板缩略图和实际模板样式区分
 
-## 第三轮：产品化能力（部分完成）
-
-已完成：
+## 第三轮：产品化能力（已完成）
 
 - DOCX 导出接口和编辑器导出入口
 - 自定义强调色、模板样式保存和恢复
 - OCR 引擎状态接口和扫描版 PDF 的明确错误提示
+- OCR 状态路由改为动态检测 Tesseract（返回版本与可用性）
 
-待完成：
+## 第四轮：工程与体验完善（已完成）
 
-1. OCR 导入：安装 Tesseract 并设置 `TESSERACT_CMD`，区分文字型 PDF 和扫描版 PDF，增加识别耗时提示。
-2. 桌面端打包：选择 Tauri 或 Electron，把前端和 PDF/DOCX 服务封装成一个安装包。
+- 环境自愈：`npm run setup` 自动补装 rollup 原生包、清除 macOS Gatekeeper 对 fsevents 的隔离标记；README 新增常见问题章节
+- 排版：超长内容块（单条超过页容量）按句子边界做段落级拆分，续段以「（续）」条目呈现，标题只在首段保留
+- 模板变体：属性面板新增五组配色预设（藏蓝/青绿/石板灰/酒红/墨黑）与字体预设下拉
+- Tiptap 2 → 3 升级（`setContent` 选项对象化；审计中的 Tiptap 中危告警消除）
+- 移除 `src/lib`、`src/data`、`src/types`、`src/stores` 兼容 re-export，测试全部迁移到分层路径
+- 集成测试超时加固（exporter 启动等待 20s → 40s，hook 超时 60s），修复并行执行时的偶发失败
+- Tauri 2 桌面打包：`src-tauri` Rust 壳 + 前端静态加载 + Fastify 编译产物随包分发；应用启动时自动探测 node 并拉起导出服务，退出时回收子进程；已产出 `Resume Studio.app`（约 10 MB）
+- 服务端 tsconfig 收窄 include，避免前端 API 文件进入服务端编译
 
-DOCX 导出已经能在本地服务生成 Word 文件；渲染验证环境缺少中文字体时，LibreOffice 预览可能显示方框，用户在安装中文字体的 Word 环境中打开即可正常显示。当前版本已经可以作为稳定的本地 Web MVP 使用。
+已知遗留：
+
+1. 桌面端子进程在本沙箱化环境中偶发被系统拦截导致导出服务延迟启动；浏览器/开发模式不受影响。真机验证与 sidecar 二进制化（`@yao-pkg/pkg`）列入下一轮。
+2. vitest 3 的 dev 依赖链（tinypool）仍有审计告警，升级 vitest 5 需同步评估 vite 版本，暂缓。
+3. DMG 打包依赖 hdiutil 挂载，在沙箱环境被拦截；普通终端执行 `npm run tauri:build` 即可产出完整 dmg。

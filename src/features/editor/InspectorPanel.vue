@@ -3,7 +3,14 @@ import { computed } from 'vue'
 import { createId } from '@/domain/resume/defaults'
 import RichTextEditor from './RichTextEditor.vue'
 import { loadCustomTheme, saveCustomTheme } from '@/infrastructure/storage/templateStorage'
-import type { PageMode, ResumeDocument, ResumeItem, ResumeSection } from '@/domain/resume/model'
+import {
+  ACCENT_PRESETS,
+  FONT_PRESETS,
+  type PageMode,
+  type ResumeDocument,
+  type ResumeItem,
+  type ResumeSection,
+} from '@/domain/resume/model'
 
 const props = defineProps<{
   document: ResumeDocument
@@ -69,6 +76,16 @@ const applySavedTemplate = (): void => {
 
 const setPageMode = (mode: PageMode): void => {
   props.document.theme.pageMode = mode
+  onInput()
+}
+
+const applyAccent = (value: string): void => {
+  props.document.theme.accentColor = value
+  onInput()
+}
+
+const applyFontPreset = (value: string): void => {
+  props.document.theme.fontFamily = value
   onInput()
 }
 </script>
@@ -149,6 +166,20 @@ const setPageMode = (mode: PageMode): void => {
           应用已保存样式
         </button>
       </div>
+      <div class="preset-row">
+        <span class="preset-row__label">配色</span>
+        <button
+          v-for="preset in ACCENT_PRESETS"
+          :key="preset.id"
+          type="button"
+          class="swatch"
+          :class="{ active: document.theme.accentColor.toLowerCase() === preset.value.toLowerCase() }"
+          :style="{ '--swatch-color': preset.value }"
+          :title="preset.label"
+          :aria-label="`强调色 ${preset.label}`"
+          @click="applyAccent(preset.value)"
+        ></button>
+      </div>
       <div class="form-grid">
         <label
           >模板
@@ -160,12 +191,10 @@ const setPageMode = (mode: PageMode): void => {
         </label>
         <label
           >字体
-          <select v-model="document.theme.fontFamily" @change="onInput">
-            <option value="Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif">
-              思源黑体 / 系统无衬线
+          <select :value="document.theme.fontFamily" @change="applyFontPreset(($event.target as HTMLSelectElement).value)">
+            <option v-for="preset in FONT_PRESETS" :key="preset.id" :value="preset.value">
+              {{ preset.label }}
             </option>
-            <option value="Georgia, Noto Serif SC, serif">衬线风格</option>
-            <option value="Arial, Noto Sans SC, sans-serif">Arial / 无衬线</option>
           </select>
         </label>
         <label

@@ -33,16 +33,19 @@
 - 导出前检查姓名、联系方式、空模块、页数和内容溢出
 - 编辑器撤销/重做和模块拖拽排序
 - 单元测试、浏览器端集成测试和导出接口验证
+- 超长内容块的段落级自动拆分（单条经历跨页时按句子边界切分为「（续）」条目）
+- 配色预设与字体预设快速换肤
+- 环境自愈安装脚本（自动修复 rollup 原生包缺失与 macOS Gatekeeper 拦截）
+- Tauri 桌面打包支持（`npm run tauri:build` 产出约 10 MB 的原生应用）
 
 当前没有实现：
 
-- 扫描版 PDF 的 OCR 导入
+- 扫描版 PDF 的 OCR 导入（OCR 状态检测已就绪，识别需安装 Tesseract）
 - 自定义拖拽画布、任意定位和图片编辑
-- 单个超长内容块的段落级自动拆分
 - 模板在线下载和模板编辑器
 - 云端同步、登录、分享链接和跨设备访问
 - AI 内容优化、ATS 评分和求职投递管理
-- Electron/Tauri 安装包
+- 桌面端 sidecar 二进制化（当前桌面包依赖系统 Node 运行时）
 - Docker 镜像
 
 ## 技术栈
@@ -91,9 +94,37 @@ cp .env.example .env
 
 初始化命令说明：
 
-- `npm run setup`：安装 Playwright Chromium，只需在新电脑或 CI 环境执行一次。
+- `npm run setup`：安装 Playwright Chromium，只需在新电脑或 CI 环境执行一次；同时会自动修复常见的原生依赖缺失问题。
 - `npm run doctor`：检查 Node.js、浏览器和本机监听配置。
 - `npm run dev`：同时启动前端和本地 API 服务。
+
+## 常见问题
+
+### 启动时报 `Cannot find module @rollup/rollup-darwin-arm64`
+
+这是 npm 在 macOS Apple Silicon 上漏装可选依赖的已知 bug。`npm run setup` 会自动补装，也可以手动执行：
+
+```bash
+npm install @rollup/rollup-darwin-arm64 --no-save
+```
+
+### macOS 弹出「无法验证开发者」提示（fsevents.node）
+
+这是系统 Gatekeeper 对未签名原生模块的正常拦截，不是安全问题。请在弹窗中点击「取消」，然后执行 `npm run setup`（会自动清除隔离标记）。请勿点击「移到废纸篓」，否则会删除前端热更新所需模块。
+
+### 导入扫描版 PDF 提示需要 OCR
+
+扫描版（纯图片）PDF 无法直接提取文字，需要安装 Tesseract：
+
+```bash
+# macOS
+brew install tesseract
+
+# 安装后确认可用
+tesseract --version
+```
+
+如果 Tesseract 不在默认 `PATH`，可在 `.env` 中设置 `TESSERACT_CMD=/path/to/tesseract`。查看当前 OCR 状态可访问 `http://127.0.0.1:4173/api/ocr/status`。
 
 只启动前端：
 
@@ -179,7 +210,7 @@ RESUME_FIXTURE_PDF=/absolute/path/to/resume.pdf npm test
 - `tests/integration`：本地导入和导出接口测试
 - `tests/e2e`：Playwright 浏览器流程测试
 
-完整的依赖方向和扩展约定见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。旧的 `src/lib`、`src/data`、`src/types` 和 `src/stores` 路径目前只保留兼容 re-export，不再放实现代码；页面组件已经迁移到 `src/features`。
+完整的依赖方向和扩展约定见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)。历史版本用于兼容的 `src/lib`、`src/data`、`src/types`、`src/stores` 路径已移除，业务实现统一放在 `src/features` 与 `src/domain` 分层目录。
 
 ## GitHub 开源和换机
 
@@ -236,4 +267,12 @@ git push -u origin main
 
 ## 依赖审计说明
 
-`@fastify/static` 已升级到兼容 Fastify 5 的安全版本。当前生产依赖审计不再有高危项；Tiptap 2.x 仍会被审计工具报告中危问题，直接升级到 Tiptap 3 会涉及编辑器大版本兼容性验证，因此暂列为后续升级任务。应用只监听本机地址，并对导出富文本做基础清理。
+Tiptap 已升级到 3.x，先前的中危审计告警已消除。当前剩余审计项集中在 vitest 开发依赖链（tinypool 等），不影响生产产物；升级 vitest 5 列入后续任务。应用只监听本机地址，并对导出富文本做基础清理。
+
+## 桌面端打包
+
+```bash
+npm run tauri:build
+```
+
+需要 Rust 工具链（`rustup`）。产物输出到 `src-tauri/target/release/bundle/`，macOS 下为 `Resume Studio.app`（约 10 MB）。应用启动时会自动查找系统 Node 并拉起导出服务，退出时自动回收。

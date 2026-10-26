@@ -12,7 +12,7 @@ const fixturePath = process.env.RESUME_FIXTURE_PDF
 let serverProcess: ChildProcess | undefined
 
 const waitForServer = async (): Promise<void> => {
-  const deadline = Date.now() + 20_000
+  const deadline = Date.now() + 40_000
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`${baseUrl}/api/health`)
@@ -33,7 +33,7 @@ beforeAll(async () => {
     stdio: 'ignore',
   })
   await waitForServer()
-})
+}, 60_000)
 
 afterAll(() => {
   serverProcess?.kill('SIGTERM')

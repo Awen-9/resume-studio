@@ -1,6 +1,6 @@
-import { createDefaultDocument } from '@/data/defaultResume'
-import { itemTextLength, validateResumeDocument } from '@/lib/resume'
-import { sanitizeRichHtml } from '@/lib/resumeRenderer'
+import { createDefaultDocument } from '@/domain/resume/defaults'
+import { itemTextLength, validateResumeDocument } from '@/domain/resume/validation'
+import { sanitizeRichHtml } from '@/domain/resume/renderer'
 
 describe('resume document rules', () => {
   it('creates a valid starter document', () => {

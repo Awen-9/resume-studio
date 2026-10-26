@@ -48,7 +48,7 @@ server/routes -> server/services -> domain/infrastructure
 
 ## 兼容出口
 
-`src/lib`、`src/data`、`src/types` 和 `src/stores` 当前保留了极薄的 re-export 文件。它们用于兼容旧测试、已有脚本和外部引用，不再承载实现；页面组件已经迁移到 `src/features`，新代码应使用上面的分层路径。待外部引用全部迁移后，可以在一个独立版本删除这些兼容出口。
+历史版本的 `src/lib`、`src/data`、`src/types` 和 `src/stores` 目录已移除。这些路径曾作为极薄的 re-export 用于兼容旧测试和外部脚本，现已全部迁移到分层路径，不再保留任何兼容出口。
 
 ## 服务端请求流
 

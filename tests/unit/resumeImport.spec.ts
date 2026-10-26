@@ -1,4 +1,4 @@
-import { parseResumeText } from '@/lib/resumeImport'
+import { parseResumeText } from '@/domain/resume/importParser'
 
 describe('resume PDF text import parser', () => {
   it('maps a Chinese resume into profile and structured sections', () => {

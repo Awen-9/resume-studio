@@ -76,3 +76,43 @@ export const TEMPLATE_LABELS: Record<TemplateId, string> = {
   compact: '紧凑单页',
   accent: '蓝色强调',
 }
+
+/** 字体预设：一组可一键套用的中英文字体组合。 */
+export interface FontPreset {
+  id: string
+  label: string
+  value: string
+}
+
+export const FONT_PRESETS: FontPreset[] = [
+  {
+    id: 'sans',
+    label: '黑体 / 无衬线',
+    value: 'Noto Sans SC, PingFang SC, Microsoft YaHei, sans-serif',
+  },
+  {
+    id: 'serif',
+    label: '宋体 / 衬线',
+    value: 'Georgia, Noto Serif SC, SimSun, serif',
+  },
+  {
+    id: 'modern',
+    label: '现代清爽',
+    value: 'Helvetica Neue, Arial, Noto Sans SC, sans-serif',
+  },
+]
+
+/** 配色预设：常用简历强调色，配合字体预设实现快速换肤。 */
+export interface AccentPreset {
+  id: string
+  label: string
+  value: string
+}
+
+export const ACCENT_PRESETS: AccentPreset[] = [
+  { id: 'navy', label: '藏蓝', value: '#315D8C' },
+  { id: 'teal', label: '青绿', value: '#1F7A6D' },
+  { id: 'slate', label: '石板灰', value: '#4B5563' },
+  { id: 'wine', label: '酒红', value: '#8C3B4E' },
+  { id: 'ink', label: '墨黑', value: '#20262D' },
+]

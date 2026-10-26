@@ -1,4 +1,4 @@
-import { createDefaultDocument } from '@/data/defaultResume'
+import { createDefaultDocument } from '@/domain/resume/defaults'
 import {
   deleteStoredDocument,
   exportStoredDocuments,
@@ -7,7 +7,7 @@ import {
   listStoredDocuments,
   loadStoredDocument,
   saveStoredDocument,
-} from '@/lib/storage'
+} from '@/infrastructure/storage/indexedDbStorage'
 
 describe('local resume storage', () => {
   it('saves, lists, loads and deletes documents', async () => {
