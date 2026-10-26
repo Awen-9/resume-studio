@@ -47,7 +47,7 @@
     "@eslint/js": "^9.17.0",
     "@playwright/test": "^1.49.1",
     "@tauri-apps/cli": "^2.12.4",
-    "@types/node": "^22.10.5",
+    "@types/node": "^26.6.5",
     "@vitejs/plugin-vue": "^5.2.1",
     "concurrently": "^9.1.2",
     "eslint": "^9.17.0",
