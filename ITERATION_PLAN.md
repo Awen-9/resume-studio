@@ -1,4 +1,4 @@
-# 四轮迭代计划
+# 五轮迭代计划
 
 ## 第一轮：核心可靠性（已完成）
 
@@ -35,8 +35,18 @@
 - Tauri 2 桌面打包：`src-tauri` Rust 壳 + 前端静态加载 + Fastify 编译产物随包分发；应用启动时自动探测 node 并拉起导出服务，退出时回收子进程；已产出 `Resume Studio.app`（约 10 MB）
 - 服务端 tsconfig 收窄 include，避免前端 API 文件进入服务端编译
 
+## 第五轮：数据健壮性与工程收敛（本次）
+
+- 数据校验增强：`validateResumeDocument` 新增邮箱/手机号格式校验与 `schemaVersion` 版本校验（空值不误报，仅在有内容时校验格式）
+- 修复 `importParser.ts` 中冗余的三元表达式（`dateInfo ? block.slice(1) : block.slice(1)` 两个分支相同），并补全文件级与正则注释
+- 页面模式收敛：移除 `PageMode` 中与 `one-page-strict` 语义重复的历史遗留值 `'one-page'`，新增 `normalizePageMode` 归一化函数，旧数据自动映射为 `one-page-strict`；同步清理 checks / pagination / 属性面板 / 导出检查弹窗中的冗余判断
+- 渲染漂移治理：为 `renderer.ts` 内联模板 CSS 与 `styles.css` 预览模板样式补充交叉引用注释，明确「预览与导出需保持视觉一致」的约定；补全 renderer / model / defaults / docxRenderer / resumeStore / indexedDbStorage 的中文注释
+- 文档与 CI：同步 `README.en.md`（补充 Features、Not Included、常见问题、桌面打包章节）、更新 `CHANGELOG.md`；CI 新增独立的 typecheck 步骤
+- 测试：新增邮箱/手机号/schemaVersion 校验、遗留 `one-page` 归一化共 4 个单元测试
+
 已知遗留：
 
 1. 桌面端子进程在本沙箱化环境中偶发被系统拦截导致导出服务延迟启动；浏览器/开发模式不受影响。真机验证与 sidecar 二进制化（`@yao-pkg/pkg`）列入下一轮。
 2. vitest 3 的 dev 依赖链（tinypool）仍有审计告警，升级 vitest 5 需同步评估 vite 版本，暂缓。
 3. DMG 打包依赖 hdiutil 挂载，在沙箱环境被拦截；普通终端执行 `npm run tauri:build` 即可产出完整 dmg。
+4. `renderer.ts` 内联 CSS 与 `styles.css` 模板样式仍是两份独立定义，仅通过注释约定同步；彻底收敛为单一数据源需引入模板样式配置化重构，留待后续。

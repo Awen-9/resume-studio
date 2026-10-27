@@ -43,11 +43,19 @@ describe('resume pagination', () => {
 
   it('starts one-page mode from a single compact page', () => {
     const document = createDefaultDocument()
-    document.theme.pageMode = 'one-page'
+    document.theme.pageMode = 'one-page-strict'
     for (let index = 0; index < 6; index += 1) document.sections.push(document.sections[0])
     const pages = paginateSections(document.sections, document.theme)
     expect(pages).toHaveLength(1)
     expect(pages[0].sections).toHaveLength(document.sections.length)
+  })
+
+  it('normalizes the legacy one-page value to one-page-strict', () => {
+    const document = createDefaultDocument()
+    // 模拟旧数据仍携带历史遗留值 'one-page'。
+    document.theme.pageMode = 'one-page' as never
+    const pages = paginateSections(document.sections, document.theme)
+    expect(pages).toHaveLength(1)
   })
 
   it('splits a single oversized item across pages without truncation', () => {

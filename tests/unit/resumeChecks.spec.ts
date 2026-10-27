@@ -33,7 +33,20 @@ describe('export readiness checks', () => {
   it('warns when one-page mode still has multiple pages', () => {
     const document = createDefaultDocument()
     document.profile.name = '测试用户'
-    document.theme.pageMode = 'one-page'
+    document.theme.pageMode = 'one-page-strict'
+    const issues = checkResumeBeforeExport(document, {
+      pageCount: 2,
+      overflowPages: [],
+      ready: true,
+    })
+    expect(issues.some((issue) => issue.code === 'one-page-missed')).toBe(true)
+  })
+
+  it('normalizes the legacy one-page value to one-page-strict', () => {
+    const document = createDefaultDocument()
+    document.profile.name = '测试用户'
+    // 模拟旧数据仍携带历史遗留值 'one-page'。
+    document.theme.pageMode = 'one-page' as never
     const issues = checkResumeBeforeExport(document, {
       pageCount: 2,
       overflowPages: [],

@@ -17,6 +17,16 @@ import type {
   TemplateId,
 } from '@/domain/resume/model'
 
+/**
+ * 编辑状态仓库（Pinia）。
+ *
+ * 集中管理简历目录、当前编辑文档、历史版本与撤销/重做快照，
+ * 所有持久化读写都委托给 {@link indexedDbStorage}，不在此处直接操作 IndexedDB。
+ *
+ * 撤销/重做基于「历史版本栈」实现：每次保存都会写入一条历史记录，
+ * `undo` 回退到上一条、`redo` 基于暂存的 `redoSnapshot` 前进，
+ * 因而天然兼容多份简历的隔离与恢复。
+ */
 export const useResumeStore = defineStore('resume', () => {
   const documents = ref<ResumeSummary[]>([])
   const currentDocument = ref<ResumeDocument>(createDefaultDocument())

@@ -2,12 +2,31 @@ import { getEffectiveTheme, paginateSections } from './pagination.js'
 import { stripHtml } from './validation.js'
 import type { ResumeDocument } from './model.js'
 
+/**
+ * 简历 HTML 渲染器（PDF 导出专用）。
+ *
+ * 生成一份独立的、内联全部样式的 A4 HTML 文档，交由 Playwright Chromium 渲染为 PDF。
+ * 它不依赖前端运行时，因此在 Node 服务端同样可用。
+ *
+ * 注意：本文件内联的模板视觉样式，需与 `src/app/styles.css` 中的同名模板类
+ * （`.template-classic` / `.template-compact` / `.template-accent`）保持视觉一致。
+ * 修改任一侧的配色、边框或间距时，务必同步另一侧，避免「预览」与「导出」结果漂移。
+ */
+
+/**
+ * 清洗富文本 HTML，仅保留白名单标签并剥离事件/样式等危险属性。
+ *
+ * 白名单：`p`、`strong`、`em`、`ul`、`ol`、`li`、`br`。
+ * 属性和事件处理器（`on*`、`style`、`href`、`src`）一律移除，
+ * 防止把不可信内容注入导出的 PDF 或预览 DOM。
+ */
 export const sanitizeRichHtml = (value: string): string => {
   return value
     .replace(/<(?!\/?(?:p|strong|em|ul|ol|li|br)\b)[^>]*>/gi, '')
     .replace(/\s(?:on\w+|style|href|src)\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '')
 }
 
+/** HTML 转义，防止用户输入的内容破坏文档结构或注入脚本。 */
 const escapeHtml = (value: string): string => {
   return value
     .replaceAll('&', '&amp;')
@@ -17,6 +36,7 @@ const escapeHtml = (value: string): string => {
     .replaceAll("'", '&#039;')
 }
 
+/** 收集个人联系方式字段（电话、邮箱、地点、网站），过滤空值。 */
 const profileFields = (document: ResumeDocument): string[] => {
   return [
     document.profile.phone,
@@ -26,6 +46,11 @@ const profileFields = (document: ResumeDocument): string[] => {
   ].filter(Boolean)
 }
 
+/**
+ * 渲染简历头部。根据 `headerLayout` 决定采用「紧凑」还是「堆叠」版式：
+ * - 紧凑（compact）：将职位标题与姓名合并为一行，适合带 `displayTitle`/`detail` 的导入结果；
+ * - 堆叠（stacked，默认）：姓名、目标职位、联系方式分层居中展示。
+ */
 const renderProfileHeader = (document: ResumeDocument): string => {
   const profile = document.profile
   if (profile.headerLayout === 'compact' || profile.displayTitle || profile.detail) {
@@ -34,6 +59,10 @@ const renderProfileHeader = (document: ResumeDocument): string => {
   return `<header class="resume-header"><h1>${escapeHtml(profile.name || '未填写姓名')}</h1><p class="resume-header__headline">${escapeHtml(profile.headline || '目标职位')}</p><p class="resume-header__meta">${profileFields(document).map(escapeHtml).join('  |  ')}</p></header>`
 }
 
+/**
+ * 渲染单条经历（内容块）。标题与时间并排展示，副标题与地点并排展示，
+ * 正文富文本经过清洗，要点列表以 `<ul>` 呈现。空字段会自动省略对应行。
+ */
 const renderItem = (item: ResumeDocument['sections'][number]['items'][number]): string => {
   const bullets = item.bullets.length
     ? `<ul class="resume-bullets">${item.bullets.map((bullet) => `<li>${escapeHtml(bullet)}</li>`).join('')}</ul>`
@@ -48,6 +77,15 @@ const renderItem = (item: ResumeDocument['sections'][number]['items'][number]): 
   </div>`
 }
 
+/**
+ * 将简历文档渲染为完整的 A4 HTML 文档（供 PDF 导出）。
+ *
+ * 步骤：
+ * 1. 应用一页模式的压缩主题（`getEffectiveTheme`）；
+ * 2. 分页（`paginateSections`）；
+ * 3. 逐页渲染头部（仅首页）、模块、条目与页码；
+ * 4. 附上一段前端脚本 `__resumeReflow`，在渲染后对溢出页面做二次拆分兜底。
+ */
 export const renderResumeHtml = (resumeDocument: ResumeDocument): string => {
   const theme = getEffectiveTheme(resumeDocument.theme)
   const pages = paginateSections(resumeDocument.sections, theme)

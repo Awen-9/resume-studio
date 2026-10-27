@@ -693,6 +693,14 @@ textarea:hover {
   opacity: 0.68;
 }
 
+/* -------------------------------------------------------------------------
+ * 模板视觉样式（前端预览）
+ *
+ * 以下 `.template-classic` / `.template-compact` / `.template-accent` 规则
+ * 需与 `src/domain/resume/renderer.ts` 内联的模板 CSS 保持视觉一致，
+ * 否则浏览器预览与 PDF 导出结果会漂移。修改配色、边框或间距时务必同步两侧。
+ * ---------------------------------------------------------------------- */
+
 .template-accent .resume-section h2 {
   color: var(--resume-accent);
 }

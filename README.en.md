@@ -15,17 +15,23 @@ It is intentionally designed for personal local use. There is no login, payment,
 - Reorder, hide, remove, and add sections with drag-and-drop support.
 - Use rich text formatting for bold, italic, and bullet lists.
 - Preview three templates with configurable font, size, line height, margins, spacing, accent color, and page numbers.
+- One-page modes with automatic font/line-height/margin compression and overflow warnings.
+- Accent color and font presets for one-click re-skinning.
 - Import text-based PDF resumes into structured sections with a review step before saving.
 - Export PDF and DOCX files through the local Fastify service.
+- Paragraph-level splitting for oversized items so a single long entry is never truncated at a page boundary.
 - Persist data in IndexedDB with localStorage migration fallback, history, undo/redo, and JSON backup/restore.
+- Self-healing setup script that repairs missing native dependencies and macOS Gatekeeper quarantine.
+- Tauri desktop packaging (`npm run tauri:build`, ~10 MB native app).
 - Run unit, integration, browser E2E, lint, formatting, and build checks locally or in GitHub Actions.
 
 ## Not Included
 
-- OCR for scanned/image-only PDFs
+- OCR for scanned/image-only PDFs (status detection is ready; recognition requires installing Tesseract)
 - Cloud sync, accounts, sharing links, payments, or remote storage
 - AI writing, ATS scoring, application tracking, or career assessments
-- Desktop installer, Docker image, or hosted deployment
+- Desktop sidecar binary (the current desktop build depends on a system Node runtime)
+- Docker image or hosted deployment
 
 ## Requirements
 
@@ -73,6 +79,40 @@ npm run format:check # Prettier check
 ## Data and Privacy
 
 Resume data stays in the browser's IndexedDB on the current computer. The application has no remote upload logic. PDF import and export requests go only to the local `127.0.0.1` service. Use the in-app JSON backup before moving to another computer; never commit that backup, a personal PDF, screenshots, or `.env` to GitHub.
+
+## Troubleshooting
+
+### `Cannot find module @rollup/rollup-darwin-arm64`
+
+This is a known npm bug that skips an optional dependency on macOS Apple Silicon. `npm run setup` repairs it automatically, or install it manually:
+
+```bash
+npm install @rollup/rollup-darwin-arm64 --no-save
+```
+
+### macOS "cannot verify the developer" prompt (fsevents.node)
+
+This is Gatekeeper blocking an unsigned native module, not a security issue. Click "Cancel" and run `npm run setup`, which clears the quarantine attribute. Do not click "Move to Trash", or the frontend hot-reload module will be removed.
+
+### Scanned PDF import asks for OCR
+
+Scanned (image-only) PDFs cannot extract text directly and need Tesseract:
+
+```bash
+# macOS
+brew install tesseract
+tesseract --version
+```
+
+If Tesseract is not on the default `PATH`, set `TESSERACT_CMD=/path/to/tesseract` in `.env`. Check the current OCR status at `http://127.0.0.1:4173/api/ocr/status`.
+
+## Desktop Build
+
+```bash
+npm run tauri:build
+```
+
+A Rust toolchain (`rustup`) is required. The output is written to `src-tauri/target/release/bundle/` (`Resume Studio.app` on macOS, ~10 MB). On launch, the app detects a system Node runtime and spawns the export service, reclaiming it on exit.
 
 ## Architecture
 

@@ -1,3 +1,15 @@
+/**
+ * PDF 简历导入解析器。
+ *
+ * 负责把 `pdfTextExtractor` 提取出的纯文本，转换为结构化的 {@link ResumeDocument}：
+ * 1. 归一化文本行，过滤噪音与空白；
+ * 2. 按「教育经历 / 工作经历 / 项目经历」等标准标题切分模块；
+ * 3. 从顶部区域（preamble）识别姓名、手机号、邮箱、网站与目标职位；
+ * 4. 结构化模块按日期断句拆分条目，教育模块额外提取「相关课程」为要点列表。
+ *
+ * 解析结果是「尽力而为」的启发式处理，无法保证对所有简历版式完全准确，
+ * 因此返回结果会携带 {@link ResumeImportResult.warnings}，由导入确认页兜底人工修订。
+ */
 import type { ResumeDocument, ResumeItem, ResumeSection, SectionType } from './model.js'
 
 const DEFAULT_IMPORT_THEME = {
@@ -37,10 +49,14 @@ const SECTION_DEFINITIONS: Array<{ type: SectionType; names: string[] }> = [
   { type: 'summary', names: ['个人总结', '自我评价', '个人评价', 'summary'] },
 ]
 
+/** 日期区间：`2018.09 - 2022.06`、`2018 年 9 月 至 2022 年 6 月`、`2020.1-至今` 等常见写法。 */
 const DATE_PATTERN =
   /((?:19|20)\d{2}\s*[年./-]\s*\d{1,2}\s*(?:月|[/.-])?\s*(?:-|至|到)\s*(?:(?:19|20)\d{2}\s*[年./-]\s*\d{1,2}\s*(?:月|[/.-])?|至今))/i
+/** 手机号：允许 `+86` 前缀与 `-`/空格分隔，匹配国内 11 位号码。 */
 const PHONE_PATTERN = /(?:\+?86[-\s]?)?1[3-9]\d{9}/
+/** 邮箱：宽松匹配常见邮箱格式。 */
 const EMAIL_PATTERN = /[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i
+/** 网址：仅匹配显式带协议的 http/https 链接。 */
 const URL_PATTERN = /https?:\/\/[^\s|丨]+/i
 
 const escapeHtml = (value: string): string => {
@@ -192,7 +208,9 @@ const parseStructuredSection = (draft: SectionDraft): ResumeSection => {
       item.title = firstLine
     }
 
-    const body = dateInfo ? block.slice(1) : block.slice(1)
+    // 首行已用于标题（或作为标题），剩余行作为正文逐行解析。
+    // 若正文首行不是要点，则视为职位/角色等副标题。
+    const body = block.slice(1)
     if (body.length > 0 && !isBulletLine(body[0])) item.subtitle = body.shift() ?? ''
     for (const line of body) {
       if (isBulletLine(line)) item.bullets.push(removeBulletMarker(line))

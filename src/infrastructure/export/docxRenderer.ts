@@ -12,6 +12,18 @@ import {
 import { stripHtml } from '../../domain/resume/validation.js'
 import type { ResumeDocument, ResumeItem } from '../../domain/resume/model.js'
 
+/**
+ * Word（.docx）渲染适配器。
+ *
+ * 基于 `docx` 库把结构化简历转换为 A4 版式的 Word 文档：
+ * - 头部居中展示姓名、联系方式与目标职位；
+ * - 模块标题带下边框，条目沿用「标题 + 时间」「副标题 + 地点」的对齐排版；
+ * - 正文与要点列表分别渲染为普通段落和项目符号段落。
+ *
+ * 与 PDF 渲染不同，DOCX 不经过浏览器测量，因此不做分页裁剪，
+ * 由 Word 在打开时按页面尺寸自动分页。字号使用半磅（half-point）单位。
+ */
+
 const A4_WIDTH_TWIPS = 11906
 const A4_HEIGHT_TWIPS = 16838
 

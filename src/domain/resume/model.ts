@@ -1,7 +1,24 @@
+/**
+ * 简历领域模型。
+ *
+ * 定义简历文档的核心数据结构：个人信息（profile）、页面主题（theme）、
+ * 内容模块（section）与内容条目（item），以及各枚举类型的展示标签与预设。
+ * 该层不依赖 Vue / Fastify / 浏览器存储，可被前端与 Node 服务端共用。
+ */
+
 export type SectionType = 'education' | 'experience' | 'project' | 'skills' | 'summary' | 'custom'
 
 export type TemplateId = 'classic' | 'compact' | 'accent'
-export type PageMode = 'standard' | 'one-page-preferred' | 'one-page-strict' | 'one-page'
+/**
+ * 页面模式：
+ * - `standard`：标准多页排版，不压缩；
+ * - `one-page-preferred`：优先压缩到一页，但内容过长时允许生成多页；
+ * - `one-page-strict`：强制一页，尽量压缩字号/行距/边距，内容过长时提示风险。
+ *
+ * 历史版本曾使用 `'one-page'` 作为「强制一页」的别名，现统一为 `one-page-strict`。
+ * 读取旧数据时由 {@link normalizePageMode} 归一化，避免遗留值破坏渲染。
+ */
+export type PageMode = 'standard' | 'one-page-preferred' | 'one-page-strict'
 
 export interface ResumeProfile {
   name: string

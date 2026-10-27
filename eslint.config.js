@@ -5,7 +5,14 @@ import vueParser from 'vue-eslint-parser'
 
 export default tseslint.config(
   {
-    ignores: ['dist', 'dist-server', 'node_modules', 'playwright-report'],
+    ignores: [
+      'dist',
+      'dist-server',
+      'node_modules',
+      'playwright-report',
+      'src-tauri',
+      'test-results',
+    ],
   },
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

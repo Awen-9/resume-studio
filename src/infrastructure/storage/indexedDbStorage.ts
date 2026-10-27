@@ -1,5 +1,16 @@
 import type { ResumeDocument, ResumeSummary } from '@/domain/resume/model'
 
+/**
+ * 简历本地持久化层。
+ *
+ * 首选 IndexedDB（无容量上限、支持索引查询），并保留 localStorage 作为回退：
+ * - 不支持 IndexedDB 的测试/受限环境自动回退到 localStorage；
+ * - 首次打开时会把历史 localStorage 数据一次性迁移进 IndexedDB。
+ *
+ * 历史版本以独立的 `history` 对象存储存储，按 `documentId` 建索引，
+ * 每个文档最多保留 {@link MAX_HISTORY} 条，超出后自动裁剪最旧的记录。
+ */
+
 const STORAGE_KEY = 'resume-studio.documents.v1'
 const DB_NAME = 'resume-studio'
 const DB_VERSION = 1

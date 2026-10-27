@@ -136,11 +136,7 @@ const applyFontPreset = (value: string): void => {
         </button>
         <button
           type="button"
-          :class="{
-            active:
-              document.theme.pageMode === 'one-page-strict' ||
-              document.theme.pageMode === 'one-page',
-          }"
+          :class="{ active: document.theme.pageMode === 'one-page-strict' }"
           @click="setPageMode('one-page-strict')"
         >
           强制一页
@@ -149,12 +145,7 @@ const applyFontPreset = (value: string): void => {
       <p v-if="document.theme.pageMode === 'one-page-preferred'" class="control-note">
         优先压缩排版，但内容过长时允许生成多页。
       </p>
-      <p
-        v-else-if="
-          document.theme.pageMode === 'one-page-strict' || document.theme.pageMode === 'one-page'
-        "
-        class="control-note"
-      >
+      <p v-else-if="document.theme.pageMode === 'one-page-strict'" class="control-note">
         尽量保持一页，内容不会被删除；过长时会提示风险。
       </p>
       <div class="theme-actions">

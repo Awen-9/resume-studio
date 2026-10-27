@@ -32,4 +32,28 @@ describe('resume document rules', () => {
     expect(result).not.toContain('onclick')
     expect(result).not.toContain('<script>')
   })
+
+  it('validates email and phone format', () => {
+    const document = createDefaultDocument()
+    document.profile.email = 'not-an-email'
+    document.profile.phone = '12345'
+    const errors = validateResumeDocument(document)
+    expect(errors).toContain('邮箱格式不正确')
+    expect(errors).toContain('手机号格式不正确')
+  })
+
+  it('accepts valid email and phone without format errors', () => {
+    const document = createDefaultDocument()
+    document.profile.email = 'name@example.com'
+    document.profile.phone = '138 0000 0000'
+    const errors = validateResumeDocument(document)
+    expect(errors.some((error) => error.includes('格式不正确'))).toBe(false)
+  })
+
+  it('flags an invalid schema version', () => {
+    const document = createDefaultDocument()
+    document.schemaVersion = 0
+    const errors = validateResumeDocument(document)
+    expect(errors).toContain('简历数据版本不合法')
+  })
 })

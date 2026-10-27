@@ -1,5 +1,12 @@
 import type { ResumeDocument, ResumeItem, ResumeSection, ResumeTheme, SectionType } from './model'
 
+/**
+ * 简历默认值与工厂函数。
+ *
+ * 提供默认主题、默认文档，以及创建 id / 条目 / 模块的辅助工厂，
+ * 保证新建简历与导入结果遵循统一的数据结构，避免散落各处手写对象字面量。
+ */
+
 export const DEFAULT_THEME: ResumeTheme = {
   templateId: 'classic',
   pageMode: 'standard',

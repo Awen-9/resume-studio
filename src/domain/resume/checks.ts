@@ -1,4 +1,5 @@
 import { stripHtml } from './validation.js'
+import { normalizePageMode } from './pagination.js'
 import type { ResumeDocument } from './model.js'
 
 export type CheckSeverity = 'error' | 'warning' | 'success'
@@ -76,10 +77,7 @@ export const checkResumeBeforeExport = (
       message: `第 ${layout.overflowPages.join('、')} 页内容溢出，可能在 PDF 中被裁切。`,
     })
   }
-  if (
-    (document.theme.pageMode === 'one-page-strict' || document.theme.pageMode === 'one-page') &&
-    layout.pageCount > 1
-  ) {
+  if (normalizePageMode(document.theme.pageMode) === 'one-page-strict' && layout.pageCount > 1) {
     issues.push({
       code: 'one-page-missed',
       severity: 'warning',

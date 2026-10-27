@@ -6,15 +6,27 @@ export interface PrintablePage {
   sections: ResumeSection[]
 }
 
+/**
+ * 归一化页面模式，兼容历史遗留值。
+ *
+ * 早期版本使用 `'one-page'` 表示「强制一页」，后统一为 `'one-page-strict'`。
+ * 旧数据若仍携带 `'one-page'`，在此处归一化为 `'one-page-strict'`，避免渲染与检查失效。
+ * 输入类型放宽为 `string | undefined`，以兼容从 IndexedDB/JSON 反序列化出的历史数据。
+ */
+export const normalizePageMode = (
+  mode: ResumeTheme['pageMode'] | string | undefined,
+): 'standard' | 'one-page-preferred' | 'one-page-strict' => {
+  if (mode === 'one-page-preferred') return 'one-page-preferred'
+  if (mode === 'one-page-strict' || mode === 'one-page') return 'one-page-strict'
+  return 'standard'
+}
+
 export const getEffectiveTheme = (theme: ResumeTheme): ResumeTheme => {
-  if (
-    theme.pageMode !== 'one-page-preferred' &&
-    theme.pageMode !== 'one-page-strict' &&
-    theme.pageMode !== 'one-page'
-  )
-    return theme
+  const pageMode = normalizePageMode(theme.pageMode)
+  if (pageMode !== 'one-page-preferred' && pageMode !== 'one-page-strict') return theme
   return {
     ...theme,
+    pageMode,
     fontSize: Math.max(10, theme.fontSize - 1.5),
     lineHeight: Math.min(1.38, theme.lineHeight),
     pageMargin: Math.min(12, theme.pageMargin),
@@ -135,7 +147,8 @@ export const paginateSections = (
   sections: ResumeSection[],
   theme: ResumeTheme,
 ): PrintablePage[] => {
-  if (theme.pageMode === 'one-page-strict' || theme.pageMode === 'one-page') {
+  const pageMode = normalizePageMode(theme.pageMode)
+  if (pageMode === 'one-page-strict') {
     return [{ index: 1, sections: sections.filter((section) => section.visible) }]
   }
   const printableSections = sections

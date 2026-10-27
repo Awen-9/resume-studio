@@ -48,7 +48,13 @@ const summary = computed(() => {
         <strong>{{ summary }}</strong>
         <span
           >{{ layout.pageCount }} 页 ·
-          {{ document.theme.pageMode === 'one-page' ? '一页模式' : '标准模式' }}</span
+          {{
+            document.theme.pageMode === 'one-page-strict'
+              ? '一页模式'
+              : document.theme.pageMode === 'one-page-preferred'
+                ? '一页优先'
+                : '标准模式'
+          }}</span
         >
       </div>
 
