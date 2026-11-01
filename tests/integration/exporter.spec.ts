@@ -26,8 +26,9 @@ const waitForServer = async (): Promise<void> => {
 }
 
 beforeAll(async () => {
-  const tsxPath = path.resolve('node_modules/.bin/tsx')
-  serverProcess = spawn(process.execPath, [tsxPath, 'server/index.ts'], {
+  // 用 node --import tsx 直接跑 TS：windows 上 node_modules/.bin/tsx 是给 shell 用的脚本，
+  // 拿 node 去执行会报 SyntaxError（missing ) after argument list），服务永远起不来
+  serverProcess = spawn(process.execPath, ['--import', 'tsx', 'server/index.ts'], {
     cwd: process.cwd(),
     env: { ...process.env, PORT: String(port), HOST: '127.0.0.1' },
     stdio: 'ignore',

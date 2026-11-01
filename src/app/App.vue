@@ -49,6 +49,24 @@ const scheduleSave = (): void => {
   }, 350)
 }
 
+/**
+ * 立即落盘：把还在 350ms 防抖里的保存取消掉、当场写完。
+ * 导出备份、返回列表、导出 PDF 之前都要等它，否则会按 IndexedDB 里的旧数据走，
+ * 最后一次改动就丢了（备份文件里少了刚填的内容）。
+ */
+const flushSave = async (): Promise<void> => {
+  if (saveTimer) {
+    window.clearTimeout(saveTimer)
+    saveTimer = undefined
+  }
+  await store.save()
+}
+
+const back = async (): Promise<void> => {
+  await flushSave()
+  screen.value = 'home'
+}
+
 const openEditor = async (id: string): Promise<void> => {
   await store.open(id)
   screen.value = 'editor'
@@ -66,6 +84,7 @@ const removeDocument = async (id: string): Promise<void> => {
 }
 
 const backup = async (): Promise<void> => {
+  await flushSave()
   downloadFile(
     await exportStoredDocuments(),
     `resume-studio-backup-${new Date().toISOString().slice(0, 10)}.json`,
@@ -120,7 +139,7 @@ const cancelImport = (): void => {
 }
 
 const exportPdf = async (): Promise<void> => {
-  await store.save()
+  await flushSave()
   notice.value = '正在生成 PDF...'
   try {
     const blob = await exportResumeFile(store.currentDocument, 'pdf')
@@ -133,7 +152,7 @@ const exportPdf = async (): Promise<void> => {
 }
 
 const exportDocx = async (): Promise<void> => {
-  await store.save()
+  await flushSave()
   notice.value = '正在生成 Word...'
   try {
     const blob = await exportResumeFile(store.currentDocument, 'docx')
@@ -218,7 +237,7 @@ onUnmounted(() => {
       :history="store.history"
       :can-undo="store.canUndo"
       :can-redo="store.canRedo"
-      @back="screen = 'home'"
+      @back="back"
       @save="scheduleSave"
       @duplicate="duplicateDocument"
       @export-pdf="exportPdf"
