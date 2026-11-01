@@ -1,0 +1,48 @@
+import { createDefaultDocument } from '@/domain/resume/defaults'
+import {
+  deleteStoredDocument,
+  exportStoredDocuments,
+  importStoredDocuments,
+  listDocumentHistory,
+  listStoredDocuments,
+  loadStoredDocument,
+  saveStoredDocument,
+} from '@/infrastructure/storage/indexedDbStorage'
+
+describe('local resume storage', () => {
+  it('saves, lists, loads and deletes documents', async () => {
+    const document = createDefaultDocument()
+    await saveStoredDocument(document)
+    document.title = '更新后的简历'
+    await saveStoredDocument(document)
+    expect(await listStoredDocuments()).toHaveLength(1)
+    expect((await loadStoredDocument(document.id))?.title).toBe(document.title)
+    expect(await listDocumentHistory(document.id)).toHaveLength(2)
+    await deleteStoredDocument(document.id)
+    expect(await listStoredDocuments()).toHaveLength(0)
+  })
+
+  it('exports and imports a portable JSON backup', async () => {
+    const document = createDefaultDocument()
+    await saveStoredDocument(document)
+    const backup = await exportStoredDocuments()
+    window.localStorage.clear()
+    expect(await importStoredDocuments(backup)).toBe(1)
+    expect((await loadStoredDocument(document.id))?.profile.name).toBe('你的姓名')
+  })
+
+  it('rejects invalid backup data', async () => {
+    await expect(importStoredDocuments('{"invalid": true}')).rejects.toThrow('备份文件格式不正确')
+    await expect(importStoredDocuments('not json')).rejects.toThrow('备份文件格式不正确')
+  })
+
+  it('keeps existing documents when a backup contains a malformed resume', async () => {
+    const document = createDefaultDocument()
+    await saveStoredDocument(document)
+    const broken = { ...createDefaultDocument(), sections: [{ id: 'x', items: 'oops' }] }
+    await expect(
+      importStoredDocuments(JSON.stringify({ documents: [createDefaultDocument(), broken] })),
+    ).rejects.toThrow('第 2 份简历')
+    expect((await listStoredDocuments()).map((item) => item.id)).toEqual([document.id])
+  })
+})

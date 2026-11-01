@@ -1,0 +1,12 @@
+node_modules
+dist
+dist-server
+playwright-report
+test-results
+.DS_Store
+/data/
+*.local
+.env
+.env.*
+!.env.example
+.workbuddy/
