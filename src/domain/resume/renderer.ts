@@ -134,6 +134,8 @@ export const RESUME_PAGE_CSS = `
     font-size: var(--resume-font-size);
     line-height: var(--resume-line-height);
   }
+  /* 最后一页不再强制分页，避免打印时多出一张空白页 */
+  .resume-page:last-of-type { page-break-after: auto; }
 `
 
 /**
