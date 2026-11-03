@@ -1549,6 +1549,115 @@
   line-height: 1.7;
 }
 
+/* ---- Agent 会话 / 人工确认 / 追问 ---- */
+.agent-turns {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.agent-turn {
+  padding: 8px 12px;
+  border: 1px solid #e6ebef;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.agent-turn summary {
+  color: #20262d;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.agent-turn p {
+  margin: 8px 0 0;
+  color: #3a4a56;
+  font-size: 12px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.agent-score {
+  display: flex;
+  gap: 4px;
+  align-items: baseline;
+  margin-top: 6px;
+}
+
+.agent-score__value {
+  color: #1f4e79;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.agent-score__unit {
+  color: #6b7a88;
+  font-size: 12px;
+}
+
+.agent-suggestions {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: #3a4a56;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.agent-review {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #d7e2ec;
+  border-radius: 10px;
+  background: #f7fafc;
+}
+
+.agent-review h2 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.agent-review__item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 8px;
+  border: 1px solid #e6ebef;
+  border-radius: 8px;
+  background: #fff;
+  font-size: 12px;
+}
+
+.agent-review__body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.agent-review__body .agent-edit__before,
+.agent-review__body .agent-edit__after,
+.agent-review__body .agent-edit__reason {
+  margin: 0;
+}
+
+.agent-followup {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.agent-followup input {
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid #d7dee5;
+  border-radius: 8px;
+  font-size: 13px;
+}
+
 /* ---- 设置页 + 模型摘要 ---- */
 .settings-view {
   min-height: 100vh;

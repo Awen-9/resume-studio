@@ -28,6 +28,7 @@ describe('export runtime validation', () => {
   })
 
   /** 深拷贝一份默认文档，方便按字段改成恶意值（JSON 反序列化后为可变普通对象）。 */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- 测试里要故意写入非法类型的字段
   const documentPayload = (): Record<string, any> =>
     JSON.parse(JSON.stringify(createDefaultDocument()))
 

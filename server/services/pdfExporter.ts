@@ -10,7 +10,11 @@ import {
   prepareSections,
   scaleTheme,
 } from '../../src/domain/resume/pagination.js'
-import { configureRichHtmlSanitizer, renderMeasureHtml, renderResumeHtml } from '../../src/domain/resume/renderer.js'
+import {
+  configureRichHtmlSanitizer,
+  renderMeasureHtml,
+  renderResumeHtml,
+} from '../../src/domain/resume/renderer.js'
 import { sanitizeRichHtml } from './sanitizeRichHtml.js'
 
 // 服务端导出换用 sanitize-html 清洗富文本；只在服务端模块里接线，不进入前端包。

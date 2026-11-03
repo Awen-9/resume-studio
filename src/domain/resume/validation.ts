@@ -158,7 +158,8 @@ export const resumeDocumentIssues = (value: unknown): string[] => {
   if (!isString(value.updatedAt)) issues.push('updatedAt')
   if (!isResumeProfile(value.profile)) issues.push('profile')
   if (!isResumeTheme(value.theme)) issues.push('theme')
-  if (!Array.isArray(value.sections) || !value.sections.every(isResumeSection)) issues.push('sections')
+  if (!Array.isArray(value.sections) || !value.sections.every(isResumeSection))
+    issues.push('sections')
   return issues
 }
 

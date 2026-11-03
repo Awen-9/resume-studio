@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { applyResumeEdits } from '@/domain/resume/applyEdits'
 import { resumeToPlainText } from '@/domain/interview'
 import type { ResumeSummary } from '@/domain/resume/model'
 import { makeJobProfileId, type JobProfile } from '@/domain/jobProfile'
@@ -8,21 +9,40 @@ import {
   listJobProfiles,
   saveJobProfile,
 } from '@/infrastructure/storage/jobProfiles'
-import { fetchAiProviders, runAgentStream } from '@/infrastructure/api/localResumeApi'
+import {
+  fetchAiProviders,
+  resumeAgentStream,
+  runAgentStream,
+  type AgentProposal,
+  type AgentStepPayload,
+} from '@/infrastructure/api/localResumeApi'
+import { useResumeStore } from '@/infrastructure/state/resumeStore'
 import { loadAiSettings, type ProviderId } from '@/infrastructure/storage/aiSettings'
 
 const props = defineProps<{ documents: ResumeSummary[] }>()
 const emit = defineEmits<{ back: []; 'go-settings': [] }>()
 
+const store = useResumeStore()
+
 const goal = ref('')
 const jd = ref('')
 const selectedDocId = ref(props.documents[0]?.id ?? '')
 const running = ref(false)
-const steps = ref<Array<{ tool: string; args: Record<string, unknown>; result: unknown }>>([])
+const steps = ref<AgentStepPayload[]>([])
 const answer = ref('')
 const errorMessage = ref('')
 const controller = ref<AbortController | null>(null)
 const profiles = ref<JobProfile[]>([])
+
+/** 会话 id 与多轮对话：同一 threadId 的请求会由 checkpointer 接着上一轮跑。 */
+const threadId = ref('')
+const turns = ref<Array<{ goal: string; answer: string }>>([])
+const followUp = ref('')
+
+/** 人工确认：图停在 rewrite_review 时，这里保存待确认的改写稿。 */
+const pendingProposal = ref<AgentProposal | null>(null)
+const selectedEdits = ref<number[]>([])
+const writeBackNote = ref('')
 
 const provider = ref<ProviderId>('ollama')
 const apiKey = ref('')
@@ -30,13 +50,17 @@ const selectedModel = ref('')
 const providerModels = ref<Record<ProviderId, string[]>>({ ollama: [], deepseek: [] })
 
 const TOOL_LABELS: Record<string, string> = {
-  summarize_resume: '总结简历',
-  optimize_resume: '改简历',
+  classify_intent: '判断意图',
+  analyze_match: '岗位匹配分析',
+  draft_rewrite: '起草改写',
+  apply_rewrite: '写回简历',
   generate_questions: '出面试题',
+  read_resume_section: '读取简历模块',
+  read_jd: '读取 JD',
 }
 
 const canRun = computed(
-  () => !running.value && goal.value.trim().length >= 4 && Boolean(selectedDocId.value),
+  () => !running.value && goal.value.trim().length >= 2 && Boolean(selectedDocId.value),
 )
 
 const loadDocument = async (id: string) => {
@@ -44,12 +68,35 @@ const loadDocument = async (id: string) => {
   return loadStoredDocument(id)
 }
 
-const run = async (): Promise<void> => {
-  if (!canRun.value) return
+const modelPayload = () => ({
+  provider: provider.value,
+  apiKey: apiKey.value.trim() || undefined,
+  model: selectedModel.value || undefined,
+})
+
+/** 采纳的改写真正写回简历：打开文档 → 替换 → 保存（保存会记入历史版本）。 */
+const applyEdits = async (edits: AgentProposal['edits']): Promise<void> => {
+  if (!edits.length) return
+  await store.open(selectedDocId.value)
+  const result = applyResumeEdits(store.currentDocument, edits)
+  await store.save()
+  writeBackNote.value = result.failed.length
+    ? `已写入 ${result.applied} 条，${result.failed.length} 条没在简历里找到原文，已跳过`
+    : `已写入 ${result.applied} 条到简历，可在编辑器里 Ctrl+Z 撤销`
+}
+
+const run = async (goalText: string): Promise<void> => {
+  if (running.value) return
+  const text = goalText.trim()
+  if (text.length < 2 || !selectedDocId.value) return
+
   running.value = true
   errorMessage.value = ''
   steps.value = []
   answer.value = ''
+  writeBackNote.value = ''
+  pendingProposal.value = null
+  selectedEdits.value = []
   const abort = new AbortController()
   controller.value = abort
 
@@ -57,21 +104,35 @@ const run = async (): Promise<void> => {
     const document = await loadDocument(selectedDocId.value)
     if (!document) throw new Error('没有找到这份简历，可能已被删除')
 
-    const finalAnswer = await runAgentStream(
+    const result = await runAgentStream(
       {
-        goal: goal.value.trim(),
+        goal: text,
         jd: jd.value.trim() || undefined,
         resume: resumeToPlainText(document),
-        provider: provider.value,
-        apiKey: apiKey.value.trim() || undefined,
-        model: selectedModel.value || undefined,
+        threadId: threadId.value || undefined,
+        ...modelPayload(),
       },
-      (step) => {
-        steps.value = [...steps.value, step]
+      {
+        onThread: (id) => {
+          threadId.value = id
+        },
+        onStep: (step) => {
+          steps.value = [...steps.value, step]
+        },
+        onInterrupt: (proposal, id) => {
+          threadId.value = id
+          pendingProposal.value = proposal
+          selectedEdits.value = proposal.edits.map((_, index) => index)
+        },
       },
       abort.signal,
     )
-    answer.value = finalAnswer
+
+    if (result.threadId) threadId.value = result.threadId
+    if (result.answer) {
+      answer.value = result.answer
+      turns.value = [...turns.value, { goal: text, answer: result.answer }]
+    }
   } catch (error) {
     if ((error as Error).name === 'AbortError') {
       errorMessage.value = '已停止'
@@ -84,7 +145,68 @@ const run = async (): Promise<void> => {
   }
 }
 
+const runGoal = (): void => {
+  void run(goal.value)
+}
+
+const askFollowUp = (): void => {
+  const text = followUp.value.trim()
+  if (!text) return
+  followUp.value = ''
+  void run(text)
+}
+
 const stop = (): void => controller.value?.abort()
+
+/** 确认改写：accept 先写回本地简历，再让图继续跑完；reject 只收尾。 */
+const settleRewrite = async (decision: 'accept' | 'reject'): Promise<void> => {
+  const proposal = pendingProposal.value
+  if (!proposal || running.value) return
+  running.value = true
+  errorMessage.value = ''
+  const accepted = [...selectedEdits.value].sort((a, b) => a - b)
+  try {
+    if (decision === 'accept') {
+      const edits = accepted.map((index) => proposal.edits[index]).filter(Boolean)
+      await applyEdits(edits)
+    }
+    const result = await resumeAgentStream(
+      {
+        threadId: threadId.value,
+        decision,
+        accepted: decision === 'accept' ? accepted : undefined,
+        ...modelPayload(),
+      },
+      {
+        onStep: (step) => {
+          steps.value = [...steps.value, step]
+        },
+      },
+    )
+    answer.value = result.answer
+    turns.value = [
+      ...turns.value,
+      { goal: decision === 'accept' ? '已采纳改写' : '放弃改写', answer: result.answer },
+    ]
+    pendingProposal.value = null
+    selectedEdits.value = []
+  } catch (error) {
+    errorMessage.value = error instanceof Error ? error.message : '继续执行失败'
+  } finally {
+    running.value = false
+  }
+}
+
+const newSession = (): void => {
+  if (running.value) return
+  threadId.value = ''
+  turns.value = []
+  steps.value = []
+  answer.value = ''
+  pendingProposal.value = null
+  selectedEdits.value = []
+  writeBackNote.value = ''
+}
 
 const refreshModels = async (): Promise<void> => {
   try {
@@ -141,9 +263,11 @@ const removeProfile = (id: string): void => {
 interface StepDisplay {
   tool: string
   text?: string
+  score?: number
   edits?: Array<{ before: string; after: string; reason: string }>
   questions?: Array<{ type: string; question: string; answer: string; difficulty: string }>
   summary?: string
+  suggestions?: Array<{ title: string; detail: string }>
 }
 
 const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
@@ -160,6 +284,16 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
     if (Array.isArray(result.questions)) {
       return { tool: step.tool, questions: result.questions as StepDisplay['questions'] }
     }
+    if (typeof result.score === 'number') {
+      return {
+        tool: step.tool,
+        score: result.score,
+        text: typeof result.summary === 'string' ? result.summary : '',
+        suggestions: Array.isArray(result.suggestions)
+          ? (result.suggestions as StepDisplay['suggestions'])
+          : [],
+      }
+    }
     if (typeof result.summary === 'string') return { tool: step.tool, text: result.summary }
   }
   return { tool: step.tool, text: JSON.stringify(result) }
@@ -172,7 +306,7 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
       <button type="button" class="icon-button" aria-label="返回" @click="emit('back')">←</button>
       <div class="document-name">
         <h1>AI Agent</h1>
-        <span>给一个目标，让它自己决定该做什么</span>
+        <span>给一个目标，让它自己决定该做什么；可以连续追问</span>
       </div>
     </header>
 
@@ -184,6 +318,13 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
             <template v-if="selectedModel"> · {{ selectedModel }}</template>
           </span>
           <button type="button" class="text-button" @click="emit('go-settings')">去设置</button>
+        </div>
+
+        <div class="agent-model-summary">
+          <span>会话：{{ threadId ? threadId.slice(0, 8) : '新会话' }}</span>
+          <button v-if="threadId && !running" type="button" class="text-button" @click="newSession">
+            新会话
+          </button>
         </div>
 
         <label class="interview-field">
@@ -213,7 +354,7 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
           type="button"
           class="button button--primary"
           :disabled="!canRun"
-          @click="run"
+          @click="runGoal"
         >
           运行
         </button>
@@ -225,10 +366,13 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
         >
           保存为岗位档案
         </button>
+        <p v-if="writeBackNote" class="control-note">{{ writeBackNote }}</p>
         <p v-if="errorMessage" class="control-note control-note--warn">
           {{ errorMessage }}
           <span class="interview-row">
-            <button type="button" class="text-button" :disabled="running" @click="run">重试</button>
+            <button type="button" class="text-button" :disabled="running" @click="runGoal">
+              重试
+            </button>
             <button type="button" class="text-button" @click="emit('go-settings')">去设置</button>
           </span>
         </p>
@@ -254,15 +398,34 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
       </section>
 
       <section class="agent-log">
+        <div v-if="turns.length" class="agent-turns">
+          <details v-for="(turn, index) in turns" :key="index" class="agent-turn">
+            <summary>{{ turn.goal }}</summary>
+            <p>{{ turn.answer }}</p>
+          </details>
+        </div>
+
         <p v-if="running" class="muted-text">agent 正在工作，每完成一步会显示在下面…</p>
         <ol class="agent-steps">
           <li v-for="(step, index) in steps" :key="index" class="agent-step">
             <strong class="agent-step__title">{{ TOOL_LABELS[step.tool] ?? step.tool }}</strong>
 
-            <!-- 总结：一段可读文本 -->
+            <!-- 总结 / 意图 / 通用文本 -->
             <p v-if="displayOf(step).text" class="agent-step__text">
               {{ displayOf(step).text }}
             </p>
+
+            <!-- 岗位匹配：分数 + 建议 -->
+            <div v-if="displayOf(step).score !== undefined" class="agent-score">
+              <span class="agent-score__value">{{ displayOf(step).score }}</span>
+              <span class="agent-score__unit">/ 100</span>
+            </div>
+            <ul v-if="displayOf(step).suggestions?.length" class="agent-suggestions">
+              <li v-for="(item, itemIndex) in displayOf(step).suggestions" :key="itemIndex">
+                <strong>{{ item.title }}</strong
+                >：{{ item.detail }}
+              </li>
+            </ul>
 
             <!-- 改简历：一条条 before → after -->
             <div v-if="displayOf(step).edits?.length" class="agent-edits">
@@ -300,13 +463,68 @@ const displayOf = (step: { tool: string; result: unknown }): StepDisplay => {
             </div>
           </li>
         </ol>
+
+        <!-- 人工确认：图暂停在这里，勾选后才会写回简历 -->
+        <div v-if="pendingProposal" class="agent-review">
+          <h2>确认改写</h2>
+          <p class="muted-text">{{ pendingProposal.summary }}</p>
+          <label
+            v-for="(edit, index) in pendingProposal.edits"
+            :key="index"
+            class="agent-review__item"
+          >
+            <input v-model="selectedEdits" type="checkbox" :value="index" />
+            <span class="agent-review__body">
+              <span class="agent-edit__before">{{ edit.before }}</span>
+              <span class="agent-edit__after">{{ edit.after }}</span>
+              <span class="agent-edit__reason">{{ edit.reason }}</span>
+            </span>
+          </label>
+          <div class="interview-row">
+            <button
+              type="button"
+              class="button button--primary"
+              :disabled="running || selectedEdits.length === 0"
+              @click="settleRewrite('accept')"
+            >
+              采纳所选并写回
+            </button>
+            <button
+              type="button"
+              class="button button--secondary"
+              :disabled="running"
+              @click="settleRewrite('reject')"
+            >
+              全部放弃
+            </button>
+          </div>
+        </div>
+
         <div v-if="answer && !steps.length" class="agent-answer">
           <strong>结果</strong>
           <p>{{ answer }}</p>
         </div>
         <p v-if="!steps.length && !running && !answer" class="muted-text">
-          运行后，每一步（总结 / 改简历 / 出题）都会实时出现在这里。
+          运行后，每一步（判断意图 / 匹配分析 / 改写 / 出题）都会实时出现在这里。
         </p>
+
+        <!-- 多轮追问：沿用同一个 threadId -->
+        <div v-if="threadId && !running && !pendingProposal" class="agent-followup">
+          <input
+            v-model="followUp"
+            type="text"
+            placeholder="继续追问，例如：那项目经历该怎么改？"
+            @keyup.enter="askFollowUp"
+          />
+          <button
+            type="button"
+            class="button button--secondary"
+            :disabled="!followUp.trim()"
+            @click="askFollowUp"
+          >
+            追问
+          </button>
+        </div>
       </section>
     </div>
   </main>

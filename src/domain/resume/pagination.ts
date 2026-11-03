@@ -9,9 +9,7 @@ import { itemTextLength, stripHtml } from './validation.js'
  * 旧数据若仍携带 `'one-page'`，在此处归一化为 `'one-page-strict'`，避免渲染与检查失效。
  * 输入类型放宽为 `string | undefined`，以兼容从 IndexedDB/JSON 反序列化出的历史数据。
  */
-export const normalizePageMode = (
-  mode: ResumeTheme['pageMode'] | string | undefined,
-): PageMode => {
+export const normalizePageMode = (mode: ResumeTheme['pageMode'] | string | undefined): PageMode => {
   if (mode === 'one-page-preferred') return 'one-page-preferred'
   if (mode === 'one-page-strict' || mode === 'one-page') return 'one-page-strict'
   return 'standard'

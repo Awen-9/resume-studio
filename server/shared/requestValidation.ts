@@ -3,8 +3,7 @@ import { isResumeDocument, resumeDocumentIssues } from '../../src/domain/resume/
 import type { ValidationIssue } from './schemas.js'
 
 export type ResumeValidationResult =
-  | { ok: true; document: ResumeDocument }
-  | { ok: false; issues: ValidationIssue[] }
+  { ok: true; document: ResumeDocument } | { ok: false; issues: ValidationIssue[] }
 
 /**
  * 校验导出的简历文档。

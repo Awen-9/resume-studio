@@ -131,34 +131,35 @@ export interface AgentStepPayload {
   result: unknown
 }
 
-/** 跑 agent 任务，SSE 逐步推送工具执行过程；返回最终答案。 */
-export const runAgentStream = async (
-  input: {
-    goal: string
-    jd?: string
-    resume: string
-    provider?: 'ollama' | 'deepseek'
-    apiKey?: string
-    model?: string
-  },
-  onStep: (step: AgentStepPayload) => void,
-  signal?: AbortSignal,
-): Promise<string> => {
-  const settings = input.provider
-    ? { provider: input.provider, apiKey: input.apiKey, model: input.model }
-    : providerPayload()
-  const response = await fetch(`${API_BASE_URL}/api/agent/run`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ goal: input.goal, jd: input.jd, resume: input.resume, ...settings }),
-    signal,
-  })
+export interface AgentProposal {
+  summary: string
+  edits: Array<{ before: string; after: string; reason: string }>
+}
+
+export interface AgentStreamHandlers {
+  onStep?: (step: AgentStepPayload) => void
+  /** 图在人工确认处暂停：前端展示 before/after，用户采纳或放弃后再调 resumeAgentStream。 */
+  onInterrupt?: (proposal: AgentProposal, threadId: string) => void
+  onThread?: (threadId: string) => void
+}
+
+export interface AgentStreamResult {
+  answer: string
+  threadId: string
+}
+
+const consumeAgentStream = async (
+  response: Response,
+  handlers: AgentStreamHandlers,
+): Promise<AgentStreamResult> => {
   if (!response.ok || !response.body) throw new Error('运行失败')
 
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
   let answer = ''
+  let threadId = ''
+
   for (;;) {
     const { done, value } = await reader.read()
     if (done) break
@@ -171,17 +172,87 @@ export const runAgentStream = async (
       const line = event.split('\n').find((l) => l.startsWith('data: '))
       if (!line) continue
       const payload = JSON.parse(line.slice(6)) as {
+        threadId?: string
         step?: AgentStepPayload
+        interrupt?: AgentProposal
         done?: boolean
         answer?: string
         error?: string
       }
+      if (payload.threadId) {
+        threadId = payload.threadId
+        handlers.onThread?.(threadId)
+      }
       if (payload.error) throw new Error(payload.error)
-      if (payload.step) onStep(payload.step)
+      if (payload.step) handlers.onStep?.(payload.step)
+      if (payload.interrupt) handlers.onInterrupt?.(payload.interrupt, threadId)
       if (payload.done) answer = payload.answer ?? ''
     }
   }
-  return answer
+
+  return { answer, threadId }
+}
+
+/** 跑 agent 任务：SSE 逐步推送工具执行过程，遇到人工确认会回调 onInterrupt。 */
+export const runAgentStream = async (
+  input: {
+    goal: string
+    jd?: string
+    resume: string
+    threadId?: string
+    provider?: 'ollama' | 'deepseek'
+    apiKey?: string
+    model?: string
+  },
+  handlers: AgentStreamHandlers = {},
+  signal?: AbortSignal,
+): Promise<AgentStreamResult> => {
+  const settings = input.provider
+    ? { provider: input.provider, apiKey: input.apiKey, model: input.model }
+    : providerPayload()
+  const response = await fetch(`${API_BASE_URL}/api/agent/run`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      goal: input.goal,
+      jd: input.jd,
+      resume: input.resume,
+      threadId: input.threadId,
+      ...settings,
+    }),
+    signal,
+  })
+  return consumeAgentStream(response, handlers)
+}
+
+/** 人工确认之后继续跑图：accept 会带着采纳的下标，reject 直接收尾。 */
+export const resumeAgentStream = async (
+  input: {
+    threadId: string
+    decision: 'accept' | 'reject'
+    accepted?: number[]
+    provider?: 'ollama' | 'deepseek'
+    apiKey?: string
+    model?: string
+  },
+  handlers: AgentStreamHandlers = {},
+  signal?: AbortSignal,
+): Promise<AgentStreamResult> => {
+  const settings = input.provider
+    ? { provider: input.provider, apiKey: input.apiKey, model: input.model }
+    : providerPayload()
+  const response = await fetch(`${API_BASE_URL}/api/agent/resume`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      threadId: input.threadId,
+      decision: input.decision,
+      accepted: input.accepted,
+      ...settings,
+    }),
+    signal,
+  })
+  return consumeAgentStream(response, handlers)
 }
 
 /** AI 改简历：给 JD 和简历，返回逐条改写建议。 */

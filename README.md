@@ -41,6 +41,9 @@
 - 环境自愈安装脚本（自动修复 rollup 原生包缺失与 macOS Gatekeeper 拦截）
 - Tauri 桌面打包支持（`npm run tauri:build` 产出约 10 MB 的原生应用）
 - 本机模型 AI 改写：流式增量预览，采用后是一次事务，Ctrl+Z 可整段撤回
+- 简历 Agent：用 LangGraph.js 的 StateGraph 编排意图判断、匹配分析、改写和出题，工具由模型按需调用
+- 多轮会话：checkpointer 按 thread_id 保存图状态，同一个会话可以连续追问
+- 人工确认：改写节点用 interrupt 暂停，逐条勾选采纳后才写回简历并记入历史版本
 - 岗位匹配体检（JD Matcher）：快速/深度两种模式，深度模式逐词给出简历原文依据
 - 备份导入先校验后落库：坏记录跳过计数、校验失败不动现有数据、成功后可一键撤销
 - 本地库读不出来时给出可读原因和重试入口，自动保存失败会用常驻横幅提示
@@ -64,7 +67,9 @@
 - Fastify：本地导出 API
 - `@fastify/multipart` + `pdfjs-dist`：本地 PDF 上传和文字提取
 - Playwright：Chromium PDF 渲染
-- Ollama（可选）：本机大模型，为 AI 改写与 JD 体检提供推理
+- Ollama（可选）：本机大模型，为 AI 改写、JD 体检和 Agent 提供推理
+- LangGraph.js + LangChain.js：Agent 编排、人工确认（interrupt）与会话状态（checkpointer）
+- Zod：结构化输出约束与请求校验
 - Vitest：单元测试
 - Playwright Test：端到端测试
 - ESLint + Prettier：代码规范
@@ -193,6 +198,18 @@ curl http://127.0.0.1:4173/api/ai/status   # {"available":true,...} 表示可用
 - 深度体检要逐词核对并摘录原文依据，8B 模型可能需要 30–60 秒；过程中可以点“取消评估”，关掉对话框也会中断请求。
 - AI 请求在本机串行排队（一次只跑一个），避免在同一张显卡上互相抢资源。
 - 地址和模型可用 `.env` 覆盖：`OLLAMA_URL`、`OLLAMA_MODEL`。
+
+## 简历 Agent（LangGraph）
+
+Agent 页用 `@langchain/langgraph` 的 `StateGraph` 编排一次请求：
+
+1. `classify`：判断意图（匹配分析 / 改写 / 出题 / 问答）；
+2. `analyze`：按 JD 打分并给出已具备、缺失和建议（Zod + `withStructuredOutput`）；
+3. `rewrite_draft → rewrite_review → rewrite_apply`：改写稿先在 `rewrite_review` 用 `interrupt()` 暂停，前端逐条勾选采纳后才写回简历并记入历史版本；
+4. `interview`：按题型出题；
+5. `qa`：把「读简历模块」「读 JD」「生成改写稿」注册成工具，由模型通过 `bindTools` 按需调用。
+
+图编译时挂 `MemorySaver` 作为 checkpointer：同一个 `threadId` 的请求共享会话状态，可以连续追问；刷新后也能通过 `/api/agent/session/:threadId` 取回上下文。解析失败会带着校验错误重试一次，仍失败时按关键词兜底，不会让整个请求挂掉。
 
 ## 测试与校验
 
