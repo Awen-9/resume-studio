@@ -4,11 +4,11 @@ import {
   stripThinking,
 } from '../../server/services/ollama'
 
-describe('cleaning up model output', () => {
-  // 标签用拼接写，避免编辑器/管道把尖括号吞掉
-  const open = '<' + 'think>'
-  const close = '<' + '/think>'
+// 标签用拼接写，避免编辑器/管道把尖括号吞掉
+const open = '<' + 'think>'
+const close = '<' + '/think>'
 
+describe('cleaning up model output', () => {
   it('drops a complete think block', () => {
     const raw = `${open}用户想要更好的说法，我先分析一下……${close}\n- 负责官网改版，首屏加载时间缩短`
     expect(stripThinking(raw)).toBe('\n- 负责官网改版，首屏加载时间缩短')
@@ -57,5 +57,23 @@ describe('streaming prefix gate', () => {
     const filter = createRewriteStreamFilter()
     const released = filter.push('- ' + '负'.repeat(250))
     expect(released.startsWith('- 负')).toBe(true)
+  })
+
+  it('never leaks a think block even when the model ignores think:false', () => {
+    const filter = createRewriteStreamFilter()
+    const thinking = `${open}\n${'用户想改写简历，先分析一下。'.repeat(20)}\n${close}\n`
+    expect(filter.push(thinking)).toBe('')
+
+    const released = filter.push('- 负责后端接口开发\n- 提升系统吞吐')
+    expect(released).toContain('负责后端接口开发')
+    expect(released).not.toContain('think')
+    expect(released).not.toContain('先分析')
+  })
+
+  it('does not release bullet-like lines inside an unclosed think block', () => {
+    const filter = createRewriteStreamFilter()
+    expect(filter.push(`${open}\n- 我先分析用户需求\n- 再决定怎么改\n`)).toBe('')
+    const released = filter.push(`${close}\n- 负责后端接口开发`)
+    expect(released).toBe('- 负责后端接口开发\n')
   })
 })

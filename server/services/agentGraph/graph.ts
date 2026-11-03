@@ -246,7 +246,9 @@ export const buildAgentGraph = (request: ModelRequest) => {
       conversation.push(response)
       const calls = response.tool_calls ?? []
       if (calls.length === 0) {
-        const answer = stripThinkingBlocks(textOf(response.content))
+        const answer =
+          stripThinkingBlocks(textOf(response.content)) ||
+          '模型这次只返回了思考过程，没有给出答案，请重试。'
         return { answer, steps: collected, messages: [new AIMessage(answer)] }
       }
 

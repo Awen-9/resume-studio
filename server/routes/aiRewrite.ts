@@ -192,7 +192,7 @@ export const registerAiRewriteRoute = (server: FastifyInstance): void => {
               {
                 role: 'user',
                 content:
-                  '上面的输出不合格：没有可用的要点。请严格按格式只输出以「- 」开头的 1-3 行。',
+                  '上面的输出不合格：没有可用的要点，或只输出了思考过程。不要输出思考过程，请严格按格式只输出以「- 」开头的 1-3 行。',
               },
             ],
             temperature: 0.2,

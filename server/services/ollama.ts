@@ -178,12 +178,23 @@ export const cleanRewrite = (raw: string, maxBullets = 3): string => {
   return bullets.map((line) => `- ${line}`).join('\n')
 }
 
+/** 当前缓冲是否还停在一个没闭合的思考块里。 */
+const insideThinking = (text: string): boolean => {
+  const start = text.search(THINK_OPEN)
+  if (start < 0) return false
+  return !THINK_CLOSE.test(text.slice(start))
+}
+
 /**
  * 流式改写的前缀闸门。
  *
  * 模型可能先吐「好的，以下是改写结果：」再吐正文；如果直接转发，用户会看到这段废话。
  * 所以先攒一小段（见到换行或攒够 200 字），清洗后一次性放行，之后按原样转发。
  * 结尾再用 {@link cleanRewrite} 对全文做一次纠正。
+ *
+ * 关键点：只有在清洗后**真的拿到内容**、且已经走出思考块时才放行。qwen3 偶尔无视
+ * `think: false` 先吐一大段 ` Thinking…`，如果这时就置 released，后面的思考文本会原样
+ * 漏给用户，表现为「只看到思考过程、没有改写结果」。
  */
 export const createRewriteStreamFilter = (): {
   push: (delta: string) => string
@@ -193,15 +204,18 @@ export const createRewriteStreamFilter = (): {
   let released = false
   return {
     push(delta: string): string {
-      if (released) {
-        buffer += delta
-        return delta
-      }
       buffer += delta
+      if (released) return delta
+      if (insideThinking(buffer)) return ''
       if (buffer.length < 200 && !buffer.includes('\n')) return ''
-      released = true
       const cleaned = cleanRewrite(buffer)
-      return cleaned ? `${cleaned}\n` : ''
+      if (!cleaned) {
+        // 还停在客套话里：继续攒，别把过程放出去；太长时丢掉前半段防止无限增长
+        if (buffer.length > 4000 && !insideThinking(buffer)) buffer = buffer.slice(-1000)
+        return ''
+      }
+      released = true
+      return `${cleaned}\n`
     },
     peek: (): string => buffer,
   }
