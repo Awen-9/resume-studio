@@ -1,4 +1,4 @@
-import { isResumeDocument } from '@/domain/resume/validation'
+import { parseBackup, type BackupParseResult } from '@/domain/resume/backup'
 import type { ResumeDocument, ResumeSummary } from '@/domain/resume/model'
 
 /**
@@ -18,8 +18,6 @@ const DB_VERSION = 1
 const DOCUMENT_STORE = 'documents'
 const HISTORY_STORE = 'history'
 const MAX_HISTORY = 20
-/** 自动保存合并历史版本的时间窗口。 */
-const HISTORY_MERGE_WINDOW_MS = 2 * 60 * 1000
 
 interface StoragePayload {
   documents: ResumeDocument[]
@@ -169,6 +167,7 @@ export const listStoredDocuments = async (): Promise<ResumeSummary[]> => {
       title: document.title,
       updatedAt: document.updatedAt,
       templateId: document.theme.templateId,
+      targetRole: document.targetRole,
     }))
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
 }
@@ -187,29 +186,32 @@ export const loadStoredDocument = async (id: string): Promise<ResumeDocument | n
 }
 
 /**
- * 保存文档并写入历史版本。
+ * 历史记录的写入时间戳。
  *
- * `coalesce` 为 true 时（自动保存），如果最近一条历史版本创建于 {@link HISTORY_MERGE_WINDOW_MS}
- * 之内，就覆盖这条记录而不是新增，避免连续输入时每次停顿都生成一条版本、挤掉更早的有用版本。
+ * 之前直接复用 `document.updatedAt`（毫秒精度）：连续两次保存落在同一毫秒时，
+ * 两条历史记录的 createdAt 相同，撤销就会随机拿到其中一条。这里用一个单调递增的
+ * 时钟，保证同一会话内的保存顺序严格可排序。
  */
-export const saveStoredDocument = async (
-  document: ResumeDocument,
-  options: { coalesce?: boolean } = {},
-): Promise<void> => {
-  const snapshot = clone(document)
+let lastHistoryStamp = 0
+const nextHistoryStamp = (): string => {
   const now = Date.now()
-  const withinWindow = (createdAt: string): boolean =>
-    Boolean(options.coalesce) && now - Date.parse(createdAt) < HISTORY_MERGE_WINDOW_MS
+  lastHistoryStamp = now > lastHistoryStamp ? now : lastHistoryStamp + 1
+  return new Date(lastHistoryStamp).toISOString()
+}
+
+export const saveStoredDocument = async (document: ResumeDocument): Promise<void> => {
+  const snapshot = clone(document)
+  const createdAt = nextHistoryStamp()
   if (!hasIndexedDb()) {
     const payload = readFallbackPayload()
     const index = payload.documents.findIndex((item) => item.id === snapshot.id)
     if (index >= 0) payload.documents[index] = snapshot
     else payload.documents.push(snapshot)
     payload.history ??= {}
-    const versions = payload.history[snapshot.id] ?? []
-    // 回退存储只保存文档本身，以最近版本的 updatedAt 判断时间窗口。
-    const merged = versions[0] && withinWindow(versions[0].updatedAt) ? versions.slice(1) : versions
-    payload.history[snapshot.id] = [snapshot, ...merged].slice(0, MAX_HISTORY)
+    payload.history[snapshot.id] = [snapshot, ...(payload.history[snapshot.id] ?? [])].slice(
+      0,
+      MAX_HISTORY,
+    )
     writeFallbackPayload(payload)
     return
   }
@@ -218,28 +220,38 @@ export const saveStoredDocument = async (
   const transaction = database.transaction([DOCUMENT_STORE, HISTORY_STORE], 'readwrite')
   const done = transactionDone(transaction)
   transaction.objectStore(DOCUMENT_STORE).put(snapshot)
-  const historyStore = transaction.objectStore(HISTORY_STORE)
-  const latest = options.coalesce
-    ? (
-        (await requestResult(
-          historyStore.index('documentId').getAll(snapshot.id),
-        )) as HistoryRecord[]
-      )
-        .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
-        .at(0)
-    : undefined
-  historyStore.put(
-    latest && withinWindow(latest.createdAt)
-      ? { ...latest, document: snapshot }
-      : ({
-          key: `${snapshot.id}:${now}:${Math.random().toString(36).slice(2, 8)}`,
-          documentId: snapshot.id,
-          createdAt: snapshot.updatedAt,
-          document: snapshot,
-        } satisfies HistoryRecord),
-  )
+  transaction.objectStore(HISTORY_STORE).put({
+    key: `${snapshot.id}:${createdAt}:${Math.random().toString(36).slice(2, 8)}`,
+    documentId: snapshot.id,
+    createdAt,
+    document: snapshot,
+  } satisfies HistoryRecord)
   await done
   await trimIndexedHistory(snapshot.id)
+}
+
+/**
+ * 覆盖当前文档但**不追加历史记录**。
+ *
+ * 撤销/重做是「在已有历史里移动指针」，不是「再保存一次」——早期实现用 save 回退，
+ * 结果每撤销一步就多一条历史，连按两次撤销会在两个版本之间来回跳。
+ */
+export const overwriteStoredDocument = async (document: ResumeDocument): Promise<void> => {
+  const snapshot = clone(document)
+  if (!hasIndexedDb()) {
+    const payload = readFallbackPayload()
+    const index = payload.documents.findIndex((item) => item.id === snapshot.id)
+    if (index >= 0) payload.documents[index] = snapshot
+    else payload.documents.push(snapshot)
+    writeFallbackPayload(payload)
+    return
+  }
+  await ensureMigrated()
+  const database = await openDatabase()
+  const transaction = database.transaction(DOCUMENT_STORE, 'readwrite')
+  const done = transactionDone(transaction)
+  transaction.objectStore(DOCUMENT_STORE).put(snapshot)
+  await done
 }
 
 export const deleteStoredDocument = async (id: string): Promise<void> => {
@@ -277,42 +289,44 @@ export const listDocumentHistory = async (id: string): Promise<ResumeDocument[]>
     .map((record) => clone(record.document))
 }
 
+/** 读出全部文档（含未在列表里展示的完整内容），用于备份与「恢复前快照」。 */
+export const loadAllStoredDocuments = async (): Promise<ResumeDocument[]> => {
+  return hasIndexedDb() ? readIndexedDocuments() : readFallbackPayload().documents.map(clone)
+}
+
 export const exportStoredDocuments = async (): Promise<string> => {
-  const documents = hasIndexedDb() ? await readIndexedDocuments() : readFallbackPayload().documents
+  const documents = await loadAllStoredDocuments()
   return JSON.stringify({ documents }, null, 2)
 }
 
-export const importStoredDocuments = async (raw: string): Promise<number> => {
-  let payload: StoragePayload
-  try {
-    payload = JSON.parse(raw) as StoragePayload
-  } catch {
-    throw new Error('备份文件格式不正确')
-  }
-  if (!Array.isArray(payload?.documents)) throw new Error('备份文件格式不正确')
-  // 先整体校验再写入：任何一份文档不合法都放弃导入，避免清空现有数据后只写进一半。
-  const invalidIndex = payload.documents.findIndex((document) => !isResumeDocument(document))
-  if (invalidIndex >= 0) throw new Error(`备份中第 ${invalidIndex + 1} 份简历数据不完整或已损坏`)
-  payload.documents.forEach((document) => {
-    document.schemaVersion ??= 1
-    document.updatedAt ||= new Date().toISOString()
-  })
+/**
+ * 用给定的文档整体替换本地库。
+ *
+ * 这是 destructive 操作，调用方必须先拿到用户确认或保留可撤销的快照；
+ * 解析/校验要在进入本函数之前完成（见 {@link importStoredDocuments}），
+ * 保证「校验失败」不会发生在清库之后。
+ */
+export const replaceStoredDocuments = async (documents: ResumeDocument[]): Promise<void> => {
+  const snapshots = documents.map(clone)
   if (!hasIndexedDb()) {
-    writeFallbackPayload({ documents: payload.documents.map(clone), history: {} })
-    return payload.documents.length
+    writeFallbackPayload({
+      documents: snapshots,
+      history: Object.fromEntries(snapshots.map((document) => [document.id, [document]])),
+    })
+    return
   }
   const database = await openDatabase()
   const transaction = database.transaction([DOCUMENT_STORE, HISTORY_STORE], 'readwrite')
   const done = transactionDone(transaction)
-  const documents = transaction.objectStore(DOCUMENT_STORE)
-  const history = transaction.objectStore(HISTORY_STORE)
-  const oldDocuments = (await requestResult(documents.getAll())) as ResumeDocument[]
-  const oldHistory = (await requestResult(history.getAll())) as HistoryRecord[]
-  oldDocuments.forEach((document) => documents.delete(document.id))
-  oldHistory.forEach((record) => history.delete(record.key))
-  payload.documents.forEach((document) => {
-    documents.put(clone(document))
-    history.put({
+  const documentStore = transaction.objectStore(DOCUMENT_STORE)
+  const historyStore = transaction.objectStore(HISTORY_STORE)
+  const oldDocuments = (await requestResult(documentStore.getAll())) as ResumeDocument[]
+  const oldHistory = (await requestResult(historyStore.getAll())) as HistoryRecord[]
+  oldDocuments.forEach((document) => documentStore.delete(document.id))
+  oldHistory.forEach((record) => historyStore.delete(record.key))
+  snapshots.forEach((document) => {
+    documentStore.put(clone(document))
+    historyStore.put({
       key: `${document.id}:import:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`,
       documentId: document.id,
       createdAt: document.updatedAt,
@@ -320,5 +334,15 @@ export const importStoredDocuments = async (raw: string): Promise<number> => {
     } satisfies HistoryRecord)
   })
   await done
-  return payload.documents.length
+}
+
+/**
+ * 导入备份：先解析校验，全部通过后才落库。
+ *
+ * 校验失败时抛出对用户可读的错误，本地现有简历保持原样——这是这层最重要的契约。
+ */
+export const importStoredDocuments = async (raw: string): Promise<BackupParseResult> => {
+  const parsed = parseBackup(raw)
+  await replaceStoredDocuments(parsed.documents)
+  return parsed
 }

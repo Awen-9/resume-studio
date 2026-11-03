@@ -9,8 +9,11 @@ import {
   TabStopType,
   TextRun,
 } from 'docx'
-import { stripHtml } from '../../domain/resume/html.js'
-import type { ResumeDocument, ResumeItem } from '../../domain/resume/model.js'
+import { stripHtml } from '../../src/domain/resume/validation.js'
+import { splitLeadIn } from '../../src/domain/resume/leadIn.js'
+import { getEffectiveTheme } from '../../src/domain/resume/pagination.js'
+import { resolveSizes, type ResolvedSizes } from '../../src/domain/resume/typography.js'
+import type { ResumeDocument, ResumeItem } from '../../src/domain/resume/model.js'
 
 /**
  * Word（.docx）渲染适配器。
@@ -42,7 +45,7 @@ const textRuns = (
   ]
 }
 
-const itemParagraphs = (item: ResumeItem): Paragraph[] => {
+const itemParagraphs = (item: ResumeItem, sizes: ResolvedSizes): Paragraph[] => {
   const paragraphs: Paragraph[] = []
   if (item.title || item.period) {
     paragraphs.push(
@@ -50,8 +53,12 @@ const itemParagraphs = (item: ResumeItem): Paragraph[] => {
         spacing: { before: 80, after: 20 },
         tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
         children: [
-          ...textRuns(item.title, { bold: true, size: 22 }),
-          new TextRun({ text: `\t${item.period}`, size: 20, font: 'Arial Unicode MS' }),
+          ...textRuns(item.title, { bold: true, size: sizes.title }),
+          new TextRun({
+            text: `\t${item.period}`,
+            size: sizes.subtitle,
+            font: 'Arial Unicode MS',
+          }),
         ],
       }),
     )
@@ -62,11 +69,16 @@ const itemParagraphs = (item: ResumeItem): Paragraph[] => {
         spacing: { after: 20 },
         tabStops: [{ type: TabStopType.RIGHT, position: TabStopPosition.MAX }],
         children: [
-          ...textRuns(item.subtitle, { size: 20, color: '4B5560' }),
+          // 第三层：比正文大一档并加粗，和预览的 600 字重对应
+          ...textRuns(item.subtitle, {
+            bold: true,
+            size: sizes.subtitle,
+            color: '3D4650',
+          }),
           new TextRun({
             text: `\t${item.location}`,
-            size: 20,
-            color: '4B5560',
+            size: sizes.subtitle,
+            color: '3D4650',
             font: 'Arial Unicode MS',
           }),
         ],
@@ -74,8 +86,22 @@ const itemParagraphs = (item: ResumeItem): Paragraph[] => {
     )
   }
   const content = stripHtml(item.content)
-  if (content)
-    paragraphs.push(new Paragraph({ text: content, spacing: { after: 20 }, style: 'ResumeBody' }))
+  if (content) {
+    // 与预览/PDF 一致：段落开头的「短标签：」加粗
+    const lead = splitLeadIn(content)
+    paragraphs.push(
+      new Paragraph({
+        spacing: { after: 20 },
+        style: 'ResumeBody',
+        children: lead
+          ? [
+              new TextRun({ text: lead.lead, bold: true, font: 'Arial Unicode MS' }),
+              new TextRun({ text: lead.rest, font: 'Arial Unicode MS' }),
+            ]
+          : [new TextRun({ text: content, font: 'Arial Unicode MS' })],
+      }),
+    )
+  }
   for (const bullet of item.bullets.filter(Boolean)) {
     paragraphs.push(
       new Paragraph({
@@ -91,6 +117,10 @@ const itemParagraphs = (item: ResumeItem): Paragraph[] => {
 
 export const renderResumeDocx = async (resume: ResumeDocument): Promise<Buffer> => {
   const profile = resume.profile
+  const theme = getEffectiveTheme(resume.theme)
+  // 与 PDF/预览共用同一套字号比例：Word 用的是半磅，换算集中在 typography.ts
+  const sizes = resolveSizes(theme.fontSize)
+  const compactHeader = profile.headerLayout === 'compact'
   const profileLine = [profile.phone, profile.email, profile.location, profile.website]
     .filter(Boolean)
     .join('  |  ')
@@ -103,7 +133,7 @@ export const renderResumeDocx = async (resume: ResumeDocument): Promise<Buffer> 
         new TextRun({
           text: headerTitle,
           bold: true,
-          size: profile.headerLayout === 'compact' ? 30 : 36,
+          size: compactHeader ? sizes.nameCompact : sizes.name,
           font: 'Arial Unicode MS',
         }),
       ],
@@ -111,7 +141,7 @@ export const renderResumeDocx = async (resume: ResumeDocument): Promise<Buffer> 
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 30 },
-      children: textRuns(profileLine, { size: 19, color: '535353' }),
+      children: textRuns(profileLine, { size: sizes.contact, color: '535353' }),
     }),
   ]
   if (profile.detail)
@@ -119,14 +149,14 @@ export const renderResumeDocx = async (resume: ResumeDocument): Promise<Buffer> 
       new Paragraph({
         alignment: AlignmentType.CENTER,
         spacing: { after: 20 },
-        children: textRuns(profile.detail, { size: 20 }),
+        children: textRuns(profile.detail, { size: sizes.detail }),
       }),
     )
   paragraphs.push(
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 180 },
-      children: textRuns(profile.headline || '目标职位', { size: 22 }),
+      children: textRuns(profile.headline || '目标职位', { size: sizes.headline }),
     }),
   )
 
@@ -136,10 +166,13 @@ export const renderResumeDocx = async (resume: ResumeDocument): Promise<Buffer> 
         heading: HeadingLevel.HEADING_2,
         spacing: { before: 140, after: 70 },
         border: { bottom: { color: '222222', style: BorderStyle.SINGLE, size: 8, space: 5 } },
-        children: textRuns(section.title || '未命名模块', { bold: true, size: 25 }),
+        children: textRuns(section.title || '未命名模块', {
+          bold: true,
+          size: sizes.section,
+        }),
       }),
     )
-    for (const item of section.items) paragraphs.push(...itemParagraphs(item))
+    for (const item of section.items) paragraphs.push(...itemParagraphs(item, sizes))
   }
 
   const document = new Document({
@@ -151,7 +184,7 @@ export const renderResumeDocx = async (resume: ResumeDocument): Promise<Buffer> 
           id: 'ResumeBody',
           name: 'Resume Body',
           basedOn: 'Normal',
-          run: { size: 21, font: 'Arial Unicode MS' },
+          run: { size: sizes.body, font: 'Arial Unicode MS' },
           paragraph: { spacing: { line: 270 } },
         },
       ],

@@ -17,10 +17,14 @@ It is intentionally designed for personal local use. There is no login, payment,
 - Preview three templates with configurable font, size, line height, margins, spacing, accent color, and page numbers.
 - One-page modes with automatic font/line-height/margin compression and overflow warnings.
 - Accent color and font presets for one-click re-skinning.
-- Import text-based PDF resumes into structured sections with a review step before saving.
+- Import text-based PDF or Word (.docx) resumes into structured sections with a review step before saving; Word keeps headings, lists, and table cells.
 - Export PDF and DOCX files through the local Fastify service.
 - Paragraph-level splitting for oversized items so a single long entry is never truncated at a page boundary.
 - Persist data in IndexedDB with localStorage migration fallback, history, undo/redo, and JSON backup/restore.
+- Validate a backup before touching local data, skip unusable records, and undo a restore in one click.
+- Explain storage failures in the UI (with a retry entry) instead of showing a blank page, and warn when autosave fails.
+- AI rewrite through a local model: streaming preview, applied as a single transaction so Ctrl+Z reverts it whole.
+- Job description matcher with fast/deep modes; deep mode quotes the resume line behind every matched keyword.
 - Self-healing setup script that repairs missing native dependencies and macOS Gatekeeper quarantine.
 - Tauri desktop packaging (`npm run tauri:build`, ~10 MB native app).
 - Run unit, integration, browser E2E, lint, formatting, and build checks locally or in GitHub Actions.
@@ -29,7 +33,7 @@ It is intentionally designed for personal local use. There is no login, payment,
 
 - OCR for scanned/image-only PDFs (status detection is ready; recognition requires installing Tesseract)
 - Cloud sync, accounts, sharing links, payments, or remote storage
-- AI writing, ATS scoring, application tracking, or career assessments
+- Cloud AI, ATS scoring, application tracking, or career assessments (all AI runs on a local model)
 - Desktop sidecar binary (the current desktop build depends on a system Node runtime)
 - Docker image or hosted deployment
 
@@ -38,6 +42,7 @@ It is intentionally designed for personal local use. There is no login, payment,
 - Node.js 20 or newer
 - npm 10 or newer
 - A Chromium browser for PDF rendering (the setup script installs Playwright Chromium)
+- Optional: [Ollama](https://ollama.com/) with `qwen3-8b` on the same machine (only for AI rewrite and the JD matcher)
 
 The server reads `.env` automatically. `CHROME_PATH` is optional; when it is empty, the app uses Playwright-managed Chromium or a detected system browser.
 
@@ -78,7 +83,22 @@ npm run format:check # Prettier check
 
 ## Data and Privacy
 
-Resume data stays in the browser's IndexedDB on the current computer. The application has no remote upload logic. PDF import and export requests go only to the local `127.0.0.1` service. Use the in-app JSON backup before moving to another computer; never commit that backup, a personal PDF, screenshots, or `.env` to GitHub.
+Resume data stays in the browser's IndexedDB on the current computer. The application has no remote upload logic. PDF/Word import, export, and AI requests go only to the local `127.0.0.1` services. Use the in-app JSON backup before moving to another computer; never commit that backup, a personal PDF, screenshots, or `.env` to GitHub.
+
+## Local AI (optional)
+
+AI rewrite and the JD matcher call [Ollama](https://ollama.com/) on the same machine, so resume content never leaves it:
+
+```bash
+ollama serve
+ollama pull qwen3-8b
+curl http://127.0.0.1:4173/api/ai/status   # {"available":true,...} means ready
+```
+
+- When the model is missing, the AI buttons are disabled up front and say why, instead of failing after a click.
+- Deep matching checks keywords one by one and quotes the source line, so it can take 30–60 seconds on an 8B model. Cancel it from the dialog, or just close the dialog, and the request is aborted.
+- AI requests are queued locally (one at a time) so two jobs do not fight over the same GPU.
+- Override the endpoint and model with `OLLAMA_URL` and `OLLAMA_MODEL` in `.env`.
 
 ## Troubleshooting
 
@@ -116,13 +136,18 @@ A Rust toolchain (`rustup`) is required. The output is written to `src-tauri/tar
 
 ## Architecture
 
-- `src/domain/resume`: resume model, defaults, parsing, pagination, checks, and rendering
-- `src/features`: home, editor, and PDF import review workflows
+- `src/domain/resume`: resume model, defaults, parsing, backup parsing, content preparation, page packing (`layout.ts`), checks, and rendering
+- `src/features`: home, editor (with `inspector/` split into personal info / page style / section content), and PDF/Word import review workflows
 - `src/infrastructure`: local API, IndexedDB, state, and DOCX export adapters
-- `src/shared`: browser utilities without business dependencies
-- `server/routes`: HTTP protocol boundaries
-- `server/services`: PDF text extraction, PDF rendering, and DOCX export
+- `src/shared`: browser utilities and UI composables (dialog accessibility, AI availability probe, undo focus routing)
+- `server/routes`: HTTP protocol boundaries, including the AI rewrite/match/status endpoints
+- `server/services`: PDF text extraction, two-pass PDF rendering (measure, then paginate), and DOCX export
+- `server/shared`: request validation and the AI concurrency gate
 - `tests`: unit, integration, and browser E2E coverage
+
+Page packing lives in exactly one place: `planPages` decides which blocks go on which page from measured
+heights. The preview measures in the browser and the exporter measures in headless Chromium, then both call it.
+Template styles also have a single source (`RESUME_CONTENT_CSS`), injected into the preview and inlined into the export.
 
 See [`ARCHITECTURE.md`](./ARCHITECTURE.md) for dependency rules and extension points.
 

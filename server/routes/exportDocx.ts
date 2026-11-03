@@ -1,15 +1,15 @@
 import type { FastifyInstance } from 'fastify'
 import { renderResumeWord } from '../services/docxExporter.js'
-import { isResumeDocument } from '../shared/requestValidation.js'
-import type { ResumeDocument } from '../../src/domain/resume/model.js'
+import { validateResumeDocument } from '../shared/requestValidation.js'
 
 export const registerExportDocxRoute = (server: FastifyInstance): void => {
-  server.post<{ Body: ResumeDocument }>('/api/export/docx', async (request, reply) => {
-    if (!isResumeDocument(request.body)) {
-      return reply.code(400).send({ message: '简历数据格式不正确' })
+  server.post('/api/export/docx', async (request, reply) => {
+    const validation = validateResumeDocument(request.body)
+    if (!validation.ok) {
+      return reply.code(400).send({ message: '简历数据格式不正确', details: validation.issues })
     }
     try {
-      const buffer = await renderResumeWord(request.body)
+      const buffer = await renderResumeWord(validation.document)
       return reply
         .type('application/vnd.openxmlformats-officedocument.wordprocessingml.document')
         .send(buffer)

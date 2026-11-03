@@ -14,9 +14,15 @@ concurrency:
 
 jobs:
   validate:
-    name: Validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    name: Validate (${{ matrix.os }})
+    # Windows 必须进矩阵：spawnSync('npx.cmd')、node_modules/.bin/tsx 这类跨平台陷阱
+    # 只在 Windows + Node 20+ 上暴露，之前就是这样漏出去的。
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
 
     steps:
       - name: Checkout
@@ -32,7 +38,11 @@ jobs:
         run: npm ci
 
       - name: Install Playwright Chromium
-        run: npx playwright install --with-deps chromium
+        run: npx playwright install chromium
+
+      - name: Install Playwright system deps (Linux only)
+        if: runner.os == 'Linux'
+        run: npx playwright install-deps chromium
 
       - name: Check formatting
         run: npm run format:check
@@ -52,32 +62,38 @@ jobs:
       - name: Browser E2E tests
         run: npm run test:e2e
 
+  # 桌面壳（Rust）只在 Windows 上编译校验：本机没有 Rust + MSVC 时，
+  # `src-tauri` 里的跨平台代码（路径、子进程、cfg 分支）没有任何反馈。
+  # GitHub 的 windows runner 自带 Rust 与 MSVC 生成工具，正好补上这一环。
   desktop:
-    name: Desktop (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+    name: Desktop shell (windows)
+    runs-on: windows-latest
     timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [macos-latest, windows-latest]
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+      - name: Use Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
-      - name: Cache Cargo
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build frontend and server assets
+        run: npm run build:tauri
+
+      - name: Cache Rust build
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
 
-      # generate_context! 在编译期检查前端产物和资源目录是否存在，这里放空目录即可。
-      - name: Prepare bundle directories
-        shell: bash
-        run: mkdir -p dist dist-server
+      - name: Check the Tauri shell compiles
+        run: cargo check --manifest-path src-tauri/Cargo.toml --all-targets
 
-      - name: Cargo check
-        working-directory: src-tauri
-        run: cargo check --locked
+      - name: Report desktop prerequisites (informational)
+        run: npm run desktop:doctor
+        continue-on-error: true

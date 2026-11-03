@@ -19,12 +19,19 @@ const emit = defineEmits<{
 
 const selectedType = ref<SectionType>('custom')
 const draggedId = ref<string | null>(null)
+/** 拖到哪一行：给一个落点提示，否则拖动全程没有任何反馈。 */
+const dropIndex = ref<number | null>(null)
 const sectionTypes = computed(() => Object.entries(SECTION_LABELS) as [SectionType, string][])
 
 const handleDrop = (targetIndex: number): void => {
-  if (!draggedId.value) return
-  emit('reorder', draggedId.value, targetIndex)
+  if (draggedId.value) emit('reorder', draggedId.value, targetIndex)
   draggedId.value = null
+  dropIndex.value = null
+}
+
+const endDrag = (): void => {
+  draggedId.value = null
+  dropIndex.value = null
 }
 </script>
 
@@ -46,20 +53,29 @@ const handleDrop = (targetIndex: number): void => {
         draggable="true"
         role="button"
         tabindex="0"
-        :class="{ selected: selectedSectionId === section.id, hidden: !section.visible }"
+        :class="{
+          selected: selectedSectionId === section.id,
+          hidden: !section.visible,
+          'is-dragging': draggedId === section.id,
+          'is-drop-target': dropIndex === index && draggedId !== section.id,
+        }"
+        :aria-current="selectedSectionId === section.id ? 'true' : undefined"
         @click="emit('select', section.id)"
-        @keydown.enter="emit('select', section.id)"
+        @keydown.enter.prevent="emit('select', section.id)"
+        @keydown.space.prevent="emit('select', section.id)"
         @dragstart="draggedId = section.id"
-        @dragend="draggedId = null"
-        @dragover.prevent
+        @dragend="endDrag"
+        @dragover.prevent="dropIndex = index"
         @drop="handleDrop(index)"
       >
         <span class="section-list__index">{{ String(index + 1).padStart(2, '0') }}</span>
         <span class="section-list__title">{{ section.title || '未命名模块' }}</span>
-        <span class="section-list__actions" @click.stop>
+        <!-- 按钮区不参与拖拽，否则想点按钮会先触发整行拖动 -->
+        <span class="section-list__actions" draggable="false" @click.stop>
           <button
             type="button"
             title="上移"
+            aria-label="上移模块"
             :disabled="index === 0"
             @click="emit('move', section.id, -1)"
           >
@@ -68,6 +84,7 @@ const handleDrop = (targetIndex: number): void => {
           <button
             type="button"
             title="下移"
+            aria-label="下移模块"
             :disabled="index === sections.length - 1"
             @click="emit('move', section.id, 1)"
           >
@@ -76,6 +93,8 @@ const handleDrop = (targetIndex: number): void => {
           <button
             type="button"
             :title="section.visible ? '隐藏模块' : '显示模块'"
+            :aria-label="section.visible ? '隐藏模块' : '显示模块'"
+            :aria-pressed="section.visible"
             @click="emit('toggle', section)"
           >
             {{ section.visible ? '◉' : '○' }}

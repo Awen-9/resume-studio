@@ -1,57 +1,103 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, onMounted, onUnmounted, ref } from 'vue'
-import { importResumePdf, exportResumeFile } from '@/infrastructure/api/localResumeApi'
+import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import {
+  importResumePdf,
+  importResumeDocx,
+  exportResumeFile,
+  type ImportFileKind,
+} from '@/infrastructure/api/localResumeApi'
+import EditorView from '@/features/editor/EditorView.vue'
 import HomeView from '@/features/home/HomeView.vue'
+// 这两个页面只在特定流程里出现，按需加载能让首屏少下载一块
+const ImportReviewView = defineAsyncComponent(
+  () => import('@/features/import-review/ImportReviewView.vue'),
+)
+const InterviewView = defineAsyncComponent(() => import('@/features/interview/InterviewView.vue'))
+const AgentView = defineAsyncComponent(() => import('@/features/agent/AgentView.vue'))
+const SettingsView = defineAsyncComponent(() => import('@/features/settings/SettingsView.vue'))
 import { useResumeStore } from '@/infrastructure/state/resumeStore'
 import {
   exportStoredDocuments,
   importStoredDocuments,
+  loadAllStoredDocuments,
+  loadStoredDocument,
+  replaceStoredDocuments,
 } from '@/infrastructure/storage/indexedDbStorage'
-import {
-  loadBackupReference,
-  markBackupDone,
-  needsBackupReminder,
-  requestPersistentStorage,
-} from '@/infrastructure/storage/persistence'
 import type { ResumeImportResult } from '@/domain/resume/importParser'
 import type { ResumeDocument, SectionType, TemplateId } from '@/domain/resume/model'
+import { cloneResume } from '@/domain/resume/validation'
+import { createSampleDocument } from '@/domain/resume/defaults'
+import {
+  activeEditor,
+  textRedoAvailable,
+  textUndoAvailable,
+  touchEditor,
+} from '@/shared/ui/activeEditor'
 import { downloadFile } from '@/shared/utils/fileDownload'
+import { onUnexpectedError } from '@/shared/ui/errorBus'
+import { resumeToPlainText } from '@/domain/interview'
 
-// 编辑器和导入确认页依赖 Tiptap 等较大的依赖，首页用不到，按需加载。
-const EditorView = defineAsyncComponent(() => import('@/features/editor/EditorView.vue'))
-const ImportReviewView = defineAsyncComponent(
-  () => import('@/features/import-review/ImportReviewView.vue'),
-)
+const BACKUP_KEY = 'resume-studio:last-backup-at'
+/** 多标签页协作信号：每次保存写一条，其他标签页通过 storage 事件感知。 */
+const SYNC_KEY_PREFIX = 'resume-studio:saved:'
+/** 文件名里不能出现这些字符，导入的标题常带空格和斜杠（`吴**` 会被替换成 `吴--`）。 */
+const toSafeFileName = (title: string): string =>
+  title
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/-{2,}/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/^[-\s]+|[-\s]+$/g, '')
+    .trim() || 'resume'
 
 const store = useResumeStore()
-const screen = ref<'home' | 'editor' | 'import-review'>('home')
+const screen = ref<'home' | 'editor' | 'import-review' | 'interview' | 'agent' | 'settings'>('home')
 const notice = ref('')
+/** toast 上的可选操作（例如「撤销删除」），没有操作时 2.4s 自动消失。 */
+const noticeAction = ref<{ label: string; run: () => void } | null>(null)
 const importReview = ref<ResumeImportResult | null>(null)
 const importSourceUrl = ref('')
-const backupReference = ref(loadBackupReference())
-const showBackupReminder = computed(
-  () => store.documents.length > 0 && needsBackupReminder(backupReference.value),
-)
+const shellRef = ref<HTMLElement | null>(null)
+const lastBackupAt = ref<string | null>(window.localStorage.getItem(BACKUP_KEY))
+/** 有待写入的编辑（防抖窗口内或保存失败），用于关闭页面前的提醒。 */
+const dirty = ref(false)
 let saveTimer: number | undefined
+/** 意外错误的订阅句柄；卸载时退订。 */
+let stopErrorListener: (() => void) | undefined
 
-const showNotice = (message: string): void => {
+const showNotice = (message: string, action?: { label: string; run: () => void }): void => {
   notice.value = message
+  noticeAction.value = action ?? null
+  const ttl = action ? 6000 : 2400
   window.setTimeout(() => {
-    if (notice.value === message) notice.value = ''
-  }, 2400)
+    if (notice.value !== message) return
+    notice.value = ''
+    noticeAction.value = null
+  }, ttl)
 }
 
+/** 自动保存是背景行为，不再每 350ms 弹一次 toast——工具栏已有「已保存 hh:mm」。 */
 const scheduleSave = (): void => {
+  dirty.value = true
   if (saveTimer) window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(() => {
-    void store.save()
-    showNotice('已保存到本机')
+  saveTimer = window.setTimeout(async () => {
+    try {
+      await store.save()
+      dirty.value = Boolean(store.storageError)
+      // 通知其他标签页：这份简历变了
+      window.localStorage.setItem(
+        `${SYNC_KEY_PREFIX}${store.currentDocument.id}`,
+        String(Date.now()),
+      )
+    } catch {
+      // store.save 内部已记录失败原因并以横幅展示，这里只保住 dirty 状态
+      dirty.value = true
+    }
   }, 350)
 }
 
 /**
  * 立即落盘：把还在 350ms 防抖里的保存取消掉、当场写完。
- * 导出备份、返回列表、导出 PDF 之前都要等它，否则会按 IndexedDB 里的旧数据走，
+ * 导出备份、返回列表、导出文件之前都要等它，否则会按 IndexedDB 里的旧数据走，
  * 最后一次改动就丢了（备份文件里少了刚填的内容）。
  */
 const flushSave = async (): Promise<void> => {
@@ -77,10 +123,22 @@ const createDocument = async (templateId: TemplateId): Promise<void> => {
   await openEditor(id)
 }
 
+const createSample = async (): Promise<void> => {
+  await store.importDocument(createSampleDocument())
+  screen.value = 'editor'
+}
+
 const removeDocument = async (id: string): Promise<void> => {
-  if (!window.confirm('确定删除这份简历吗？')) return
+  // 不再弹原生 confirm：删完给 6 秒撤销，一步误触也能救回来
+  const snapshot = await loadStoredDocument(id)
   await store.remove(id)
-  showNotice('简历已删除')
+  if (!snapshot) return
+  showNotice('简历已删除', {
+    label: '撤销',
+    run: () => {
+      void store.restoreDocument(snapshot).then(() => showNotice('已恢复该简历'))
+    },
+  })
 }
 
 const backup = async (): Promise<void> => {
@@ -90,36 +148,86 @@ const backup = async (): Promise<void> => {
     `resume-studio-backup-${new Date().toISOString().slice(0, 10)}.json`,
     'application/json',
   )
-  backupReference.value = markBackupDone()
+  const stamp = new Date().toISOString()
+  window.localStorage.setItem(BACKUP_KEY, stamp)
+  lastBackupAt.value = stamp
   showNotice('备份文件已导出')
 }
 
+/** 整体替换本地数据并回到第一份简历；恢复与撤销恢复共用。 */
+const applyDocuments = async (documents: ResumeDocument[]): Promise<void> => {
+  await replaceStoredDocuments(documents)
+  await store.refreshCatalog()
+  const first = store.documents[0]
+  if (first) await openEditor(first.id)
+  else screen.value = 'home'
+}
+
 const restore = async (file: File): Promise<void> => {
+  // 恢复是覆盖式操作：先给当前数据拍快照，成功后再用 toast 提供一步撤销
+  let snapshot: ResumeDocument[] = []
   try {
-    const count = await importStoredDocuments(await file.text())
+    snapshot = await loadAllStoredDocuments()
+    const { documents, skipped } = await importStoredDocuments(await file.text())
     await store.refreshCatalog()
     if (store.documents[0]) await openEditor(store.documents[0].id)
-    showNotice(`已恢复 ${count} 份简历`)
+    showNotice(
+      skipped > 0
+        ? `已恢复 ${documents.length} 份简历，跳过 ${skipped} 条无法识别的记录`
+        : `已恢复 ${documents.length} 份简历`,
+      { label: '撤销', run: () => void revertRestore(snapshot) },
+    )
   } catch (error) {
+    // 校验失败发生在落库之前，现有简历不受影响
     showNotice(error instanceof Error ? error.message : '备份恢复失败')
   }
 }
 
-const importPdf = async (file: File): Promise<void> => {
-  notice.value = '正在解析 PDF 简历...'
+const revertRestore = async (snapshot: ResumeDocument[]): Promise<void> => {
+  try {
+    await applyDocuments(snapshot)
+    showNotice('已恢复到导入前的数据')
+  } catch (error) {
+    showNotice(error instanceof Error ? error.message : '撤销恢复失败')
+  }
+}
+
+const retryInit = (): void => {
+  void store.init()
+}
+
+/** PDF 与 Word 走同一条确认流程，只是来源和文案不同。 */
+const importSourceKind = ref<ImportFileKind>('pdf')
+/** 最近一次导入的文件：失败了要给「重试」，不用让用户重新选一遍。 */
+let lastImport: { file: File; kind: ImportFileKind } | null = null
+
+const startImport = async (file: File, kind: ImportFileKind): Promise<void> => {
+  lastImport = { file, kind }
+  importSourceKind.value = kind
+  notice.value = kind === 'pdf' ? '正在解析 PDF 简历...' : '正在解析 Word 简历...'
   if (importSourceUrl.value) URL.revokeObjectURL(importSourceUrl.value)
   importSourceUrl.value = URL.createObjectURL(file)
   try {
-    importReview.value = await importResumePdf(file)
+    importReview.value = kind === 'pdf' ? await importResumePdf(file) : await importResumeDocx(file)
     notice.value = ''
     screen.value = 'import-review'
   } catch (error) {
     URL.revokeObjectURL(importSourceUrl.value)
     importSourceUrl.value = ''
     notice.value = ''
-    showNotice(error instanceof Error ? error.message : 'PDF 导入失败')
+    const message =
+      error instanceof Error ? error.message : `${kind === 'pdf' ? 'PDF' : 'Word'} 导入失败`
+    showNotice(message, {
+      label: '重试',
+      run: () => {
+        if (lastImport) void startImport(lastImport.file, lastImport.kind)
+      },
+    })
   }
 }
+
+const importPdf = (file: File): Promise<void> => startImport(file, 'pdf')
+const importDocx = (file: File): Promise<void> => startImport(file, 'docx')
 
 const confirmImport = async (): Promise<void> => {
   if (!importReview.value) return
@@ -128,7 +236,7 @@ const confirmImport = async (): Promise<void> => {
   URL.revokeObjectURL(importSourceUrl.value)
   importSourceUrl.value = ''
   screen.value = 'editor'
-  showNotice('PDF 已导入模板')
+  showNotice(`${importSourceKind.value === 'pdf' ? 'PDF' : 'Word'} 已导入模板`)
 }
 
 const cancelImport = (): void => {
@@ -138,38 +246,104 @@ const cancelImport = (): void => {
   screen.value = 'home'
 }
 
-const exportPdf = async (): Promise<void> => {
-  await flushSave()
-  notice.value = '正在生成 PDF...'
-  try {
-    const blob = await exportResumeFile(store.currentDocument, 'pdf')
-    downloadFile(blob, `${store.currentDocument.title || 'resume'}.pdf`, 'application/pdf')
-    showNotice('PDF 已导出')
-  } catch (error) {
-    notice.value = ''
-    showNotice(error instanceof Error ? error.message : 'PDF 导出失败')
-  }
+/**
+ * 导出中标记：生成 PDF 要几秒，这期间再点一次会并发跑两个无头 Chromium，
+ * 所以按钮要禁用，重复调用也直接忽略。
+ */
+const exporting = ref(false)
+
+/**
+ * 导出文件名：有真实姓名时用「姓名-岗位-简历」，比「未命名简历.pdf」更像成品，
+ * 投递时 HR 也更容易认出来。
+ */
+const exportFileName = (format: 'pdf' | 'docx', doc?: ResumeDocument): string => {
+  const document = doc ?? store.currentDocument
+  const { name, headline } = document.profile
+  const cleanName = name.trim()
+  const base =
+    cleanName && cleanName !== '你的姓名'
+      ? [cleanName, headline.trim(), '简历'].filter(Boolean).join('-')
+      : document.title
+  return `${toSafeFileName(base)}.${format}`
 }
 
-const exportDocx = async (): Promise<void> => {
+const exportResume = async (format: 'pdf' | 'docx'): Promise<void> => {
+  if (exporting.value) return
+  exporting.value = true
+  const label = format === 'pdf' ? 'PDF' : 'Word'
   await flushSave()
-  notice.value = '正在生成 Word...'
+  notice.value = `正在生成 ${label}...`
   try {
-    const blob = await exportResumeFile(store.currentDocument, 'docx')
+    const blob = await exportResumeFile(store.currentDocument, format)
     downloadFile(
       blob,
-      `${store.currentDocument.title || 'resume'}.docx`,
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      exportFileName(format),
+      format === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     )
-    showNotice('Word 已导出')
+    exporting.value = false
+    showNotice(`${label} 已导出`, { label: '再导一次', run: () => void exportResume(format) })
   } catch (error) {
+    exporting.value = false
     notice.value = ''
-    showNotice(error instanceof Error ? error.message : 'Word 导出失败')
+    showNotice(error instanceof Error ? error.message : `${label} 导出失败`)
   }
 }
 
+const exportTxt = async (): Promise<void> => {
+  await flushSave()
+  const text = resumeToPlainText(store.currentDocument)
+  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
+  downloadFile(blob, `${toSafeFileName(store.currentDocument.title)}.txt`, 'text/plain')
+  showNotice('纯文本已导出')
+}
+
+const exportPdf = (): Promise<void> => exportResume('pdf')
+const exportDocx = (): Promise<void> => exportResume('docx')
+
+/** 首页直接导出某份简历，不用先进编辑器。 */
+const exportDocument = async (id: string, format: 'pdf' | 'docx' | 'txt'): Promise<void> => {
+  try {
+    const document = await loadStoredDocument(id)
+    if (!document) {
+      showNotice('简历不存在或已被删除')
+      return
+    }
+    if (format === 'txt') {
+      const text = resumeToPlainText(document)
+      downloadFile(
+        new Blob([text], { type: 'text/plain;charset=utf-8' }),
+        `${toSafeFileName(document.title)}.txt`,
+        'text/plain',
+      )
+      showNotice('纯文本已导出')
+      return
+    }
+    showNotice(`正在生成 ${format === 'pdf' ? 'PDF' : 'Word'}...`)
+    const blob = await exportResumeFile(document, format)
+    downloadFile(
+      blob,
+      exportFileName(format, document),
+      format === 'pdf'
+        ? 'application/pdf'
+        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    showNotice(`${format === 'pdf' ? 'PDF' : 'Word'} 已导出`)
+  } catch (error) {
+    showNotice(error instanceof Error ? error.message : '导出失败')
+  }
+}
+
+/**
+ * 结构修改统一走自动保存的防抖队列。
+ *
+ * 之前 store 内部直接落盘，而文本编辑还挂着一个 350ms 的防抖保存，
+ * 于是同一次操作会被写两遍，历史里出现两条几乎一样的版本，撤销一次「没反应」。
+ */
 const addSection = (type: SectionType): void => {
   store.addSection(type)
+  scheduleSave()
   showNotice('模块已添加')
 }
 
@@ -178,15 +352,104 @@ const removeSection = (id: string): void => {
     showNotice('至少保留一个内容模块')
     return
   }
+  // 删除前留一份快照，toast 上给 6 秒「撤销」入口
+  const snapshot = cloneResume(store.currentDocument)
   store.removeSection(id)
-  showNotice('模块已删除')
+  scheduleSave()
+  showNotice('模块已删除', {
+    label: '撤销',
+    run: () => {
+      void store.restoreHistory(snapshot)
+      showNotice('已恢复该模块')
+    },
+  })
 }
 
+const moveSection = (id: string, direction: -1 | 1): void => {
+  store.moveSection(id, direction)
+  scheduleSave()
+}
+
+/** 调整单条内容的先后：顺序就是简历里的顺序。 */
+const moveItem = (sectionId: string, itemId: string, direction: -1 | 1): void => {
+  const section = store.currentDocument.sections.find((candidate) => candidate.id === sectionId)
+  if (!section) return
+  const index = section.items.findIndex((item) => item.id === itemId)
+  const target = index + direction
+  if (index < 0 || target < 0 || target >= section.items.length) return
+  const [item] = section.items.splice(index, 1)
+  section.items.splice(target, 0, item)
+  scheduleSave()
+}
+
+/** 删除单条内容：和删模块一样留快照，toast 里可撤销。 */
+const removeItem = (sectionId: string, itemId: string): void => {
+  const section = store.currentDocument.sections.find((candidate) => candidate.id === sectionId)
+  if (!section || section.items.length <= 1) return
+  const snapshot = cloneResume(store.currentDocument)
+  section.items = section.items.filter((item) => item.id !== itemId)
+  scheduleSave()
+  showNotice('内容已删除', {
+    label: '撤销',
+    run: () => {
+      void store.restoreHistory(snapshot).then(() => showNotice('已恢复该条内容'))
+    },
+  })
+}
+
+const reorderSection = (id: string, targetIndex: number): void => {
+  store.moveSectionTo(id, targetIndex)
+  scheduleSave()
+}
+
+/**
+ * 撤销/重做只有一个入口，粒度按焦点决定：
+ * - 焦点在正文编辑器或输入框里 → 交给编辑器/浏览器自己的历史（按字符、按段）；
+ * - 否则 → 走应用历史栈（按保存点，覆盖加模块、删条目、换版式这类结构修改）。
+ *
+ * 这样用户不需要记「哪个按钮是哪套语义」：Ctrl+Z 永远撤销刚才那一步，
+ * 只是文本里更细、结构上更粗。
+ */
+const canUndo = computed(() => textUndoAvailable() || store.canUndo)
+const canRedo = computed(() => textRedoAvailable() || store.canRedo)
+
+const undo = (): void => {
+  const editor = activeEditor.value
+  if (editor?.can().undo()) {
+    editor.commands.undo()
+    touchEditor()
+    return
+  }
+  void store.undo()
+}
+
+const redo = (): void => {
+  const editor = activeEditor.value
+  if (editor?.can().redo()) {
+    editor.commands.redo()
+    touchEditor()
+    return
+  }
+  void store.redo()
+}
+
+/** 输入框和正文编辑器里已经有原生/编辑器级撤销，别再插一手。 */
+const isTextEntryFocused = (): boolean =>
+  Boolean(document.activeElement?.closest('[contenteditable="true"], input, textarea, select'))
+
 const onKeyDown = (event: KeyboardEvent): void => {
-  if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+  if (!(event.metaKey || event.ctrlKey)) return
+  const key = event.key.toLowerCase()
+  if (key === 's') {
     event.preventDefault()
-    void store.save(undefined, { checkpoint: true })
+    void store.save()
     showNotice('已保存到本机')
+    return
+  }
+  if (key === 'z' && !isTextEntryFocused()) {
+    event.preventDefault()
+    if (event.shiftKey) redo()
+    else undo()
   }
 }
 
@@ -204,60 +467,132 @@ const restoreHistory = async (document: ResumeDocument): Promise<void> => {
   showNotice('已恢复历史版本')
 }
 
+/** 另一个标签页保存了当前简历时提醒：IndexedDB 没有锁，后写的会覆盖先写的。 */
+const onStorage = (event: { key: string | null }): void => {
+  if (!event.key?.startsWith(SYNC_KEY_PREFIX)) return
+  if (event.key !== `${SYNC_KEY_PREFIX}${store.currentDocument.id}`) return
+  showNotice('另一个标签页保存了这份简历，刷新可同步最新内容')
+}
+
+/** 防抖窗口内直接关页面会丢掉最后几次输入，这里拦一下（现代浏览器只看 preventDefault）。 */
+const onBeforeUnload = (event: Event): void => {
+  if (!dirty.value) return
+  event.preventDefault()
+}
+
 onMounted(() => {
   void store.init()
-  void requestPersistentStorage()
   window.addEventListener('keydown', onKeyDown)
+  window.addEventListener('storage', onStorage)
+  window.addEventListener('beforeunload', onBeforeUnload)
+  // 组件里抛的错 / 未 catch 的 promise 统一在这里露个面，而不是只进 console
+  stopErrorListener = onUnexpectedError((message) => {
+    showNotice(`出了点意外：${message}`)
+  })
+})
+
+/** 切屏后把焦点移到页面根节点，键盘/读屏用户才知道界面已经换了。 */
+watch(screen, async () => {
+  await nextTick()
+  shellRef.value?.focus()
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
+  window.removeEventListener('storage', onStorage)
+  window.removeEventListener('beforeunload', onBeforeUnload)
+  stopErrorListener?.()
   if (saveTimer) window.clearTimeout(saveTimer)
   if (importSourceUrl.value) URL.revokeObjectURL(importSourceUrl.value)
 })
 </script>
 
 <template>
-  <div class="app-shell">
+  <div ref="shellRef" class="app-shell" tabindex="-1">
+    <section v-if="store.isReady && store.fatalError" class="app-fatal" role="alert">
+      <span class="eyebrow">LOCAL STORAGE</span>
+      <h1>本地简历打不开</h1>
+      <p class="app-fatal__reason">{{ store.fatalError }}</p>
+      <p class="app-fatal__hint">
+        简历只保存在这台浏览器的本地存储里。无痕模式、禁用了网站数据，或浏览器配额写满都会导致这个页面。
+        处理后点「重试」即可，不会自动清空任何数据。
+      </p>
+      <button type="button" class="button button--primary" @click="retryInit">重试</button>
+    </section>
+    <p v-else-if="!store.isReady" class="app-loading" role="status">正在打开本地简历…</p>
     <HomeView
-      v-if="screen === 'home' && store.isReady"
+      v-else-if="screen === 'home'"
       :documents="store.documents"
-      :backup-reminder="showBackupReminder"
+      :last-backup-at="lastBackupAt"
       @open="openEditor"
       @create="createDocument"
       @remove="removeDocument"
+      @export="exportDocument"
+      @sample="createSample"
       @backup="backup"
       @restore="restore"
       @import-pdf="importPdf"
+      @import-docx="importDocx"
+      @interview="screen = 'interview'"
+      @agent="screen = 'agent'"
+      @settings="screen = 'settings'"
     />
     <EditorView
-      v-else-if="screen === 'editor' && store.isReady"
+      v-else-if="screen === 'editor'"
       :document="store.currentDocument"
       :saved-at="store.lastSavedAt"
+      :dirty="dirty"
       :history="store.history"
-      :can-undo="store.canUndo"
-      :can-redo="store.canRedo"
+      :can-undo="canUndo"
+      :can-redo="canRedo"
+      :exporting="exporting"
       @back="back"
       @save="scheduleSave"
       @duplicate="duplicateDocument"
       @export-pdf="exportPdf"
       @export-docx="exportDocx"
+      @export-txt="exportTxt"
       @add-section="addSection"
       @remove-section="removeSection"
-      @move-section="(id, direction) => store.moveSection(id, direction)"
-      @reorder-section="(id, targetIndex) => store.moveSectionTo(id, targetIndex)"
+      @remove-item="removeItem"
+      @move-item="moveItem"
+      @move-section="moveSection"
+      @reorder-section="reorderSection"
       @history="openHistory"
       @restore-history="restoreHistory"
-      @undo="store.undo"
-      @redo="store.redo"
+      @undo="undo"
+      @redo="redo"
     />
+    <InterviewView
+      v-else-if="screen === 'interview'"
+      :documents="store.documents"
+      @back="screen = 'home'"
+      @go-settings="screen = 'settings'"
+    />
+    <AgentView
+      v-else-if="screen === 'agent'"
+      :documents="store.documents"
+      @back="screen = 'home'"
+      @go-settings="screen = 'settings'"
+    />
+    <SettingsView v-else-if="screen === 'settings'" @back="screen = 'home'" />
     <ImportReviewView
       v-else-if="screen === 'import-review' && importReview"
       :result="importReview"
       :source-url="importSourceUrl"
+      :source-kind="importSourceKind"
       @cancel="cancelImport"
       @confirm="confirmImport"
     />
-    <div v-if="notice" class="toast" role="status">{{ notice }}</div>
+    <div v-if="store.storageError" class="app-banner" role="alert">
+      <span>{{ store.storageError }}</span>
+      <button type="button" class="text-button" @click="store.clearStorageError()">知道了</button>
+    </div>
+    <div v-if="notice" class="toast" role="status">
+      <span>{{ notice }}</span>
+      <button v-if="noticeAction" type="button" class="toast__action" @click="noticeAction.run()">
+        {{ noticeAction.label }}
+      </button>
+    </div>
   </div>
 </template>

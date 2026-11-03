@@ -9,4 +9,11 @@ test-results
 .env
 .env.*
 !.env.example
+# 桌面端构建配置，需要进仓库（只有本机接口地址，不含密钥）
+!.env.tauri
 .workbuddy/
+# 编辑器/工具产生的临时目录
+*.tmpdir/
+*.tmpdir
+# 本机沙箱 ACL 修复的报告与回滚记录（机器相关，不入库）
+.dsh-acl-report/

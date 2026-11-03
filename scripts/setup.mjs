@@ -8,8 +8,13 @@ import 'dotenv/config'
 
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 
+// Node 18.20.2 / 20.12.2 起（CVE-2024-27980）在 Windows 上不再允许不经过 shell
+// 直接 spawn .cmd/.bat，否则报 `spawnSync npx.cmd EINVAL`。这里的命令和参数都是
+// 脚本内写死的常量，没有外部输入，走 shell 不存在注入面。
+const needsShell = process.platform === 'win32'
+
 const run = (command, args, options = {}) => {
-  const result = spawnSync(command, args, { stdio: 'inherit', shell: false, ...options })
+  const result = spawnSync(command, args, { stdio: 'inherit', shell: needsShell, ...options })
   if (result.error) {
     console.error(`Unable to run ${command}: ${result.error.message}`)
     process.exit(1)

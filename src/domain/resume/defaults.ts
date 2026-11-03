@@ -124,3 +124,87 @@ export const createDefaultDocument = (): ResumeDocument => ({
     }),
   ],
 })
+
+/** 一份填好的示例简历：让新用户一眼看到「成品」长什么样。人名用虚构的。 */
+export const createSampleDocument = (): ResumeDocument => ({
+  id: createId('resume'),
+  title: '示例 · 后端工程师',
+  schemaVersion: 1,
+  updatedAt: new Date().toISOString(),
+  profile: {
+    name: '示例候选人',
+    headline: '后端工程师',
+    phone: '138 0000 0000',
+    email: 'sample@example.com',
+    location: '上海',
+    website: '',
+  },
+  theme: { ...DEFAULT_THEME },
+  sections: [
+    createSection('summary', {
+      title: '个人总结',
+      items: [
+        createItem({
+          content:
+            '<p>5 年后端开发经验，主导过高并发订单系统的架构改造，擅长性能优化与稳定性建设。</p>',
+        }),
+      ],
+    }),
+    createSection('experience', {
+      title: '工作经历',
+      items: [
+        createItem({
+          title: '示例科技有限公司',
+          subtitle: '资深后端工程师',
+          period: '2021.07 - 至今',
+          location: '上海',
+          content: '<p>负责订单系统的高并发改造与稳定性保障。</p>',
+          bullets: [
+            '主导订单系统改造，支撑大促峰值 10 万 QPS，P99 从 480ms 降到 90ms。',
+            '搭建公共组件库，减少重复代码约 30%，缩短新项目交付周期。',
+          ],
+        }),
+      ],
+    }),
+    createSection('project', {
+      title: '项目经历',
+      items: [
+        createItem({
+          title: '高并发订单系统改造',
+          subtitle: '技术负责人',
+          period: '2023.01 - 2024.06',
+          location: '',
+          content: '<p>重构下单链路，引入缓存与异步化，支撑大促峰值流量。</p>',
+          bullets: [
+            '设计 Redis 缓存 + 延迟消息方案，将下单接口平均耗时降低 45%。',
+            '建立全链路压测与限流演练机制，保障大促 0 事故。',
+          ],
+        }),
+      ],
+    }),
+    createSection('skills', {
+      title: '专业技能',
+      items: [
+        createItem({
+          content: '<p>精通 Java、Spring Boot；熟悉 Redis、MySQL 与分布式系统设计。</p>',
+          bullets: [
+            '熟练使用 Docker、K8s 完成服务部署与治理。',
+            '具备性能调优与线上故障排查经验。',
+          ],
+        }),
+      ],
+    }),
+    createSection('education', {
+      title: '教育经历',
+      items: [
+        createItem({
+          title: '示例大学',
+          subtitle: '计算机科学与技术 · 本科',
+          period: '2014.09 - 2018.06',
+          location: '上海',
+          content: '<p>主修数据结构、数据库原理、操作系统、计算机网络。</p>',
+        }),
+      ],
+    }),
+  ],
+})

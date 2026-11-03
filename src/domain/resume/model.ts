@@ -6,9 +6,23 @@
  * 该层不依赖 Vue / Fastify / 浏览器存储，可被前端与 Node 服务端共用。
  */
 
-export type SectionType = 'education' | 'experience' | 'project' | 'skills' | 'summary' | 'custom'
+/**
+ * 模块类型白名单。类型从数组推导，校验与类型共用同一份定义，
+ * 避免「类型里加了值、校验忘了加」的漂移。
+ */
+export const SECTION_TYPES = [
+  'education',
+  'experience',
+  'project',
+  'skills',
+  'summary',
+  'custom',
+] as const
+export type SectionType = (typeof SECTION_TYPES)[number]
 
-export type TemplateId = 'classic' | 'compact' | 'accent'
+/** 模板 id 白名单（classic/compact/accent），同样由数组推导类型。 */
+export const TEMPLATE_IDS = ['classic', 'compact', 'accent'] as const
+export type TemplateId = (typeof TEMPLATE_IDS)[number]
 /**
  * 页面模式：
  * - `standard`：标准多页排版，不压缩；
@@ -18,7 +32,8 @@ export type TemplateId = 'classic' | 'compact' | 'accent'
  * 历史版本曾使用 `'one-page'` 作为「强制一页」的别名，现统一为 `one-page-strict`。
  * 读取旧数据时由 {@link normalizePageMode} 归一化，避免遗留值破坏渲染。
  */
-export type PageMode = 'standard' | 'one-page-preferred' | 'one-page-strict'
+export const PAGE_MODES = ['standard', 'one-page-preferred', 'one-page-strict'] as const
+export type PageMode = (typeof PAGE_MODES)[number]
 
 export interface ResumeProfile {
   name: string
@@ -53,6 +68,8 @@ export interface ResumeSection {
 export interface ResumeTheme {
   templateId: TemplateId
   pageMode?: PageMode
+  /** 固定页数：设置后把内容均摊到这么多页并撑满；为空表示按内容自动分页。 */
+  targetPages?: number
   fontFamily: string
   fontSize: number
   lineHeight: number
@@ -67,6 +84,8 @@ export interface ResumeDocument {
   title: string
   schemaVersion: number
   updatedAt: string
+  /** 这份简历针对的岗位（同一段经历可以有多个投递版本）。 */
+  targetRole?: string
   profile: ResumeProfile
   theme: ResumeTheme
   sections: ResumeSection[]
@@ -77,6 +96,7 @@ export interface ResumeSummary {
   title: string
   updatedAt: string
   templateId: TemplateId
+  targetRole?: string
 }
 
 export const SECTION_LABELS: Record<SectionType, string> = {

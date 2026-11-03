@@ -48,6 +48,74 @@ textarea:focus-visible,
   min-height: 100vh;
 }
 
+/* 本地库不可用时的兜底页：必须解释「为什么」，而不是留白屏。 */
+.app-fatal {
+  display: grid;
+  gap: 12px;
+  width: min(560px, calc(100vw - 48px));
+  margin: 12vh auto 0;
+  padding: 28px 30px 30px;
+  border: 1px solid #e2c7c7;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.app-fatal h1 {
+  font-size: 20px;
+}
+
+.app-fatal__reason {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #fbf1f1;
+  color: #8c3b3b;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.app-fatal__hint {
+  color: #5a646d;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.app-fatal .button {
+  justify-self: start;
+}
+
+.app-loading {
+  padding: 18vh 0;
+  color: #6d7781;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* 自动保存失败等非阻断告警：常驻到用户确认，不用 toast 一闪而过。 */
+.app-banner {
+  position: fixed;
+  z-index: 40;
+  bottom: 18px;
+  left: 50%;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  max-width: min(720px, calc(100vw - 40px));
+  padding: 10px 14px 10px 16px;
+  border: 1px solid #e2c7c7;
+  border-radius: 10px;
+  background: #fff6f6;
+  box-shadow: 0 8px 24px rgb(32 38 45 / 12%);
+  color: #8c3b3b;
+  font-size: 13px;
+  transform: translateX(-50%);
+}
+
+.app-banner span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .eyebrow {
   color: #6d7781;
   font-size: 10px;
@@ -95,23 +163,6 @@ h2 {
 .home-header {
   gap: 32px;
   margin-bottom: 64px;
-}
-
-.backup-reminder {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-  justify-content: space-between;
-  margin: -40px 0 40px;
-  padding: 10px 14px;
-  border-left: 3px solid #c08a2b;
-  color: #6b4c12;
-  background: #fff8ea;
-  font-size: 13px;
-}
-
-.backup-reminder .text-button {
-  font-size: 13px;
 }
 
 .home-header h1 {
@@ -326,16 +377,40 @@ h2 {
   font-size: 11px;
 }
 
+/* 卡片本体是容器，真正的点击目标是内部这个铺满的按钮 */
+.document-card__open {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
 .document-card__delete {
   position: absolute;
   top: 8px;
   right: 10px;
   width: 24px;
   height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
   color: #7b858e;
+  background: transparent;
   font-size: 18px;
   line-height: 22px;
   text-align: center;
+  cursor: pointer;
+}
+
+.document-card__delete:hover,
+.document-card__delete:focus-visible {
+  color: #b04b3b;
+  background: #f7ecea;
 }
 
 .document-card__delete:hover {
@@ -434,18 +509,28 @@ h2 {
   font-size: 11px;
 }
 
+/*
+ * 编辑器工作区：工具栏固定在顶部，三栏各自独立滚动。
+ * 之前这里是「整页滚动 + min-height」，长简历滚到第二页时左侧大纲和右侧属性
+ * 会一起滚出视野，用户失去上下文。
+ */
 .editor-workspace {
   display: grid;
   grid-template-columns: 228px minmax(520px, 1fr) 340px;
-  align-items: start;
-  min-height: calc(100vh - 64px);
+  align-items: stretch;
+  height: calc(100vh - 64px);
+  height: calc(100dvh - 64px);
+  min-height: 520px;
 }
 
 .outline-panel,
 .inspector-panel {
-  min-height: calc(100vh - 64px);
+  height: 100%;
+  min-height: 0;
   padding: 22px 16px;
   background: #f7f9fa;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .outline-panel {
@@ -590,9 +675,10 @@ textarea:hover {
 
 .preview-stage {
   min-width: 0;
-  min-height: calc(100vh - 64px);
+  min-height: 0;
   padding: 26px 28px 70px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 
 .preview-stage__meta {
@@ -614,6 +700,13 @@ textarea:hover {
   font-size: 12px;
 }
 
+/* 提示类（压缩/放大说明）用中性色，避免和「溢出」这种真问题抢注意力 */
+.preview-stage__warning--info {
+  border-left-color: #315d8c;
+  color: #2b4a67;
+  background: #f2f6fb;
+}
+
 .paper-stack {
   display: flex;
   flex-direction: column;
@@ -621,27 +714,42 @@ textarea:hover {
   gap: 20px;
 }
 
-/*
- * 简历页面与模板样式定义在 `src/domain/resume/templateStyles.ts`，预览与 PDF 导出共用。
- * 这里只保留预览专属的装饰：纸张边框、阴影和选中模块的高亮。
- */
 .resume-page {
+  position: relative;
+  width: 210mm;
+  /* A4 是「最小」高度而不是固定高度：内容超页时让页面长高，绝不裁掉文字。
+     原来固定 297mm + overflow:hidden，会造成页面边界处的整段内容凭空消失。 */
+  min-height: 297mm;
+  height: auto;
+  overflow: visible;
+  padding: var(--resume-page-margin);
   border: 1px solid #d8dee5;
+  color: #202020;
+  background: #fff;
   box-shadow: 0 12px 32px rgba(45, 57, 68, 0.11);
+  font-family: var(--resume-font-family);
+  font-size: var(--resume-font-size);
+  line-height: var(--resume-line-height);
 }
 
 .resume-section {
+  /* 边距与标题样式来自 RESUME_TEMPLATE_CSS；这里只补编辑器内的滚动定位 */
   scroll-margin-top: 80px;
 }
 
 .resume-section.is-selected {
-  outline: 1px dashed rgba(49, 93, 140, 0.58);
-  outline-offset: 4px;
+  outline: 2px solid rgba(49, 93, 140, 0.68);
+  outline-offset: 6px;
+  border-radius: 2px;
+  background: rgba(49, 93, 140, 0.05);
+  transition: background 120ms ease;
 }
 
 .inspector-wrap {
   position: relative;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
 }
 
 .inspector-wrap.collapsed {
@@ -909,6 +1017,34 @@ textarea:hover {
 .rich-editor__toolbar button.active {
   color: #315d8c;
   background: #e4edf5;
+}
+
+.rich-editor__toolbar button:disabled {
+  color: #9aa6b1;
+  background: transparent;
+  cursor: progress;
+}
+
+.rich-editor__divider {
+  width: 1px;
+  margin: 3px 4px;
+  background: #e2e6e9;
+}
+
+.rich-editor__toolbar button.rich-editor__ai {
+  padding: 0 6px;
+  color: #2f6f4f;
+  background: #eef6f1;
+}
+
+.rich-editor__ai-error {
+  align-self: center;
+  max-width: 220px;
+  overflow: hidden;
+  color: #b03b3b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .rich-editor__content {
@@ -1309,7 +1445,8 @@ textarea:hover {
 
 @media (max-width: 1180px) {
   .editor-workspace {
-    grid-template-columns: 210px minmax(520px, 1fr) 300px;
+    /* minmax(0, 1fr)：中间列必须允许收缩，否则 1024 宽时右栏会被裁掉 6px */
+    grid-template-columns: 210px minmax(0, 1fr) 300px;
   }
 
   .preview-stage {
@@ -1322,7 +1459,80 @@ textarea:hover {
   }
 
   .import-review__workspace {
-    grid-template-columns: 250px 330px minmax(560px, 1fr);
+    grid-template-columns: 250px 330px minmax(0, 1fr);
+  }
+}
+
+/* 笔记本小屏：三栏都收一点，保证属性面板不会被视口裁切 */
+@media (max-width: 1080px) {
+  .editor-workspace {
+    grid-template-columns: 196px minmax(0, 1fr) 286px;
+  }
+
+  .inspector-panel {
+    padding: 18px 12px;
+  }
+}
+
+@media (max-width: 980px) {
+  .editor-workspace {
+    grid-template-columns: 176px minmax(0, 1fr) 272px;
+  }
+
+  .editor-toolbar__actions {
+    gap: 6px;
+  }
+}
+
+/*
+ * 窄屏（<980px）：属性面板从「占一列」改成覆盖式抽屉。
+ * 三栏各占 300px 在这个宽度下会把纸压到 60% 以下看不清，
+ * 抽屉式至少保证纸面可读，需要改属性时再滑出。
+ *
+ * 注意这段必须放在所有基础规则之后：`.inspector-wrap` 的基础规则里也有
+ * `position: relative`，媒体查询不加特异性，靠源码顺序取胜。
+ */
+@media (max-width: 979px) {
+  body {
+    min-width: 760px;
+  }
+
+  .editor-workspace {
+    position: relative;
+    grid-template-columns: 168px minmax(0, 1fr);
+  }
+
+  .inspector-wrap {
+    position: absolute;
+    z-index: 30;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 328px;
+    background: #f7f9fa;
+    border-left: 1px solid #d9e0e5;
+    box-shadow: -14px 0 32px rgb(15 30 45 / 16%);
+    /* 开关按钮探出容器 14px，wrap 自己不能裁剪，滚动交给内部的 .inspector-panel */
+    overflow: visible;
+  }
+
+  /* 收起时保留一条 34px 的窄轨：开关在轨内，不需要靠「探出容器」才点得到 */
+  .inspector-wrap.collapsed {
+    width: 34px;
+    border-left: 1px solid #d9e0e5;
+    box-shadow: -6px 0 16px rgb(15 30 45 / 10%);
+  }
+
+  .inspector-wrap.collapsed .inspector-toggle {
+    top: 12px;
+    left: 4px;
+    z-index: 40;
+  }
+
+  /* 展开态的把手也放在容器内：wrap 的计算 overflow 是 auto，探出容器的按钮点不到 */
+  .inspector-toggle {
+    top: 16px;
+    left: 6px;
   }
 }
 

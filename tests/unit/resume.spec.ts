@@ -1,6 +1,6 @@
 import { createDefaultDocument } from '@/domain/resume/defaults'
 import { itemTextLength, validateResumeDocument } from '@/domain/resume/validation'
-import { sanitizeRichHtml } from '@/domain/resume/html'
+import { sanitizeRichHtml } from '@/domain/resume/renderer'
 
 describe('resume document rules', () => {
   it('creates a valid starter document', () => {
@@ -31,6 +31,43 @@ describe('resume document rules', () => {
     expect(result).toContain('<p>正文</p>')
     expect(result).not.toContain('onclick')
     expect(result).not.toContain('<script>')
+  })
+
+  it('drops attributes hidden behind a slash instead of a space', () => {
+    // 浏览器会把 `/onclick` 解析成 `onclick`，旧的正则（要求属性前有空格）漏掉这一类
+    expect(sanitizeRichHtml('<li/onclick="alert(1)">条目</li>')).toBe('<li>条目</li>')
+    expect(sanitizeRichHtml('<p/onmouseover="x()">段落</p>')).toBe('<p>段落</p>')
+  })
+
+  it('strips event handlers in any spelling', () => {
+    for (const input of [
+      '<p ONLOAD=alert(1)>a</p>',
+      '<img src=x onerror=alert(1)>c',
+      '<svg/onload=alert(1)></svg>',
+      '<p style="background:url(javascript:alert(1))">d</p>',
+    ]) {
+      const result = sanitizeRichHtml(input).toLowerCase()
+      for (const forbidden of [
+        'onerror',
+        'onload',
+        'onmouseover',
+        'onclick',
+        'javascript:',
+        '<img',
+        '<svg',
+      ])
+        expect(result).not.toContain(forbidden)
+    }
+  })
+
+  it('keeps the whitelisted formatting intact', () => {
+    const html = '<p>正文<strong>重点</strong><em>强调</em></p><ul><li>要点</li></ul><br />'
+    expect(sanitizeRichHtml(html)).toBe(html)
+  })
+
+  it('escapes stray angle brackets so text cannot assemble a tag', () => {
+    expect(sanitizeRichHtml('<scr<script>ipt>')).not.toContain('<script')
+    expect(sanitizeRichHtml('a < b 且 c > d')).toBe('a &lt; b 且 c > d')
   })
 
   it('validates email and phone format', () => {

@@ -35,7 +35,7 @@
 - Tauri 2 桌面打包：`src-tauri` Rust 壳 + 前端静态加载 + Fastify 编译产物随包分发；应用启动时自动探测 node 并拉起导出服务，退出时回收子进程；已产出 `Resume Studio.app`（约 10 MB）
 - 服务端 tsconfig 收窄 include，避免前端 API 文件进入服务端编译
 
-## 第五轮：数据健壮性与工程收敛（已完成）
+## 第五轮：数据健壮性与工程收敛（本次）
 
 - 数据校验增强：`validateResumeDocument` 新增邮箱/手机号格式校验与 `schemaVersion` 版本校验（空值不误报，仅在有内容时校验格式）
 - 修复 `importParser.ts` 中冗余的三元表达式（`dateInfo ? block.slice(1) : block.slice(1)` 两个分支相同），并补全文件级与正则注释
@@ -44,39 +44,97 @@
 - 文档与 CI：同步 `README.en.md`（补充 Features、Not Included、常见问题、桌面打包章节）、更新 `CHANGELOG.md`；CI 新增独立的 typecheck 步骤
 - 测试：新增邮箱/手机号/schemaVersion 校验、遗留 `one-page` 归一化共 4 个单元测试
 
-已知遗留：
+## 第六轮：收口与加固（本次，分三批）
 
-1. 桌面端子进程在本沙箱化环境中偶发被系统拦截导致导出服务延迟启动；浏览器/开发模式不受影响。真机验证与 sidecar 二进制化（`@yao-pkg/pkg`）列入下一轮。
-2. vitest 3 的 dev 依赖链（tinypool）仍有审计告警，升级 vitest 5 需同步评估 vite 版本，暂缓。
-3. DMG 打包依赖 hdiutil 挂载，在沙箱环境被拦截；普通终端执行 `npm run tauri:build` 即可产出完整 dmg。
-4. `renderer.ts` 内联 CSS 与 `styles.css` 模板样式仍是两份独立定义，仅通过注释约定同步；彻底收敛为单一数据源需引入模板样式配置化重构，留待后续。
+> 触发原因：功能已经多轮叠加，但「承诺」和「实现」有多处没接上——导出事件接错线、
+> 「去修改」传错参数、AI 能力没写进文档、导入字段能存不能改。这一轮不加新功能，
+> 只把已有能力收口，并把过去只能靠人眼确认的地方变成可回归的断言。
 
-## 第六轮：安全与数据正确性修复（本次）
+### 第一批：数据安全与入口闭环
 
-本轮来自一次整体代码审查，集中修复会导致数据丢失或注入的问题。
+- 备份解析下沉到 `domain/resume/backup.ts`：结构不可用的记录跳过并计数，字段缺失回落默认值，旧 `one-page` 归一化；**校验全部发生在写库之前**
+- 恢复备份改为可撤销：导入前拍快照，toast 里给 6 秒撤销入口
+- 本地库打不开时给出可读错误页和重试按钮，不再白屏；自动保存失败改为常驻横幅
+- 防抖窗口内关闭页面会提示未保存
+- 富文本清洗从「黑名单正则」改为「白名单词法解析 + 属性全丢弃」，修复 `<li/onclick>` 绕过
+- JD「去修改」按建议里的词条反查模块，并把富文本正文纳入匹配；对话框关闭后保留结果
 
-富文本清洗改为白名单重建：只输出 `p`、`strong`、`em`、`ul`、`ol`、`li`、`br` 这几个不带任何属性的标签，文本中零散的尖括号会被转义，原先正则清洗可被 `<scr<script>ipt>`、未闭合属性等写法绕过的问题随之消失。`escapeHtml`、`sanitizeRichHtml`、`stripHtml` 统一放到 `domain/resume/html.ts`，前端预览、服务端导出和 DOCX 渲染共用同一份实现，`stripHtml` 不再依赖 DOM。
+### 第二批：编辑器体验与一致性
 
-导出接口和备份导入都改用 `isResumeDocument` 做结构校验。主题字段会写进内联样式，所以颜色只接受十六进制，字体名不允许出现 `;{}<>\`，数值限定在合理范围。备份导入先整体校验再写入，任何一份简历损坏都会放弃导入，不再出现清空现有数据后只写进一半的情况。
+- 属性面板拆开「密度」和「页数」：密度只写字号/行距/边距/间距，不再顺手改 `pageMode`
+- 「强制一页 / 一页优先」显示预览实测页数，做不到时如实说明还差几页
+- 导入写入的 `displayTitle` / `detail` / `headerLayout` 进属性面板；`usesCompactHeader` 让显式设置优先，可改回分层版式
+- 编辑器改为三栏独立滚动，长简历不再把大纲滚出视野
+- 修正 `layout-status` 接线（预览上报、编辑器消费），删掉导出前的重复 DOM 测量
+- 新增 `useDialogA11y`：Esc 关闭、焦点陷阱、焦点归还；首页卡片去掉交互元素嵌套
+- 导入时把识别到的目标职位写入 `targetRole`
 
-超长内容块拆分重写：先切正文、再切要点，按 700 字一段装箱，每个字符只出现一次。旧实现会在续段里重复整段正文。
+### 第三批：可验证性与 AI 收口
 
-撤销/重做改为内存快照栈（最多 100 步），支持连续撤销，未保存的编辑也算一步。自动保存在两分钟内合并为同一条历史版本，避免连续输入把有用的旧版本挤出 20 条上限；手动保存和恢复历史始终新建版本。
+- 新增 `resumeStore` 测试（撤销/重做游标、删除最后一份、模块顺序、保存失败上报），并把撤销从「再保存一次」改为移动游标（修复连按两次来回跳）
+- 新增备份解析测试、清洗绕过用例、保存失败归一化用例
+- 导出集成测试从「只校验 `%PDF` 魔数」升级为**页数与正文断言**，并新增多页简历不丢尾部的用例
+- E2E 新增：删除后撤销、密度与页数互不覆盖、模型不可用时的降级与 Esc 关闭
+- AI 入口接上 `GET /api/ai/status`；JD 体检支持取消，关闭弹窗即中断上游；错误文案去掉内部黑话
+- 两类 AI 请求接入同一条串行队列；删除无人使用的非流式 `/api/ai/rewrite`
+- README / README.en / ARCHITECTURE / CHANGELOG 同步 AI 能力与新约定
 
-其他修复：邮箱正则补上首尾锚点，导出前检查新增邮箱错误与手机号提醒；PDF 导出复用同一个 Chromium 实例，每次请求使用独立的离线上下文，服务关闭时释放浏览器；桌面端去掉写死的本机 Node 路径，健康检查改用 TCP 连接，`is_executable` 在非 Unix 平台也能编译。
+## 第七轮：把上一轮的遗留清掉（本次）
 
-预览与导出的模板样式合并为 `domain/resume/templateStyles.ts` 一份定义：前端启动时注入页面，导出渲染器内联进 HTML，不再靠注释约定两边同步。
+> 上一轮结束时的四条遗留：排版三份实现、属性面板单体、撤销两套语义、主包过大。
+> 这一轮不加功能，只做收敛与拆解。
 
-本地数据保护：启动时调用 `navigator.storage.persist()` 申请持久化存储，避免浏览器在磁盘紧张时清掉简历；距上次备份（或首次使用）超过 14 天时，首页提示导出备份。
+### 1. 排版收敛为「测量 + 单一装箱算法」
 
-本地服务新增来源校验：`Host` 必须是本机地址，带 `Origin` 的请求必须来自本机页面或桌面端，其他网站发来的跨站请求和 DNS 重绑定一律返回 403。
+- 新增 `domain/resume/layout.ts`：`planFragments` 是**唯一**的分页决策实现，纯函数、有单测
+- **模块可以跨页**：按条目装箱，续页重新渲染模块标题；标题不会被孤零零留在页底
+- 预览改成「离屏测量一次 → 装箱 → 渲染」，删掉最多 40 轮的 DOM 搬运
+- 导出改成**两遍渲染**：先量高度，再在 Node 里用同一个 `planFragments` 分批，最后按结果渲染；删除内联的 `__resumeReflow` 运行时重排脚本
+- `pagination.ts` 只保留「内容整形」（过滤隐藏模块、超长条目拆「（续）」），不再决定页归属
+- 模板样式收敛为 `RESUME_CONTENT_CSS`：导出内联、预览在 `main.ts` 注入同一份；`styles.css` 只留编辑器外壳（投影、选中高亮、滚动定位）
+- 预览、测量、导入确认三处共用 `ResumeHeaderBlock` / `ResumeSectionBlock`，量到的结构和画出来的结构是同一份组件
+- 实测：9 条工作经历的简历，预览 2 页 = 导出 PDF 2 页，模块在页边界处按条目切开、标题在续页重复
 
-编辑器和导入确认页改为按需加载，首屏 JS 从 518 KB 降到 103 KB。CI 新增 macOS 和 Windows 上的 `cargo check`。
+### 2. 属性面板拆成三个分区
 
-测试新增 `html.spec.ts`、`resumeStore.spec.ts`、`persistence.spec.ts`，并补充拆分不丢字不重复、损坏备份不覆盖数据、主题注入被拒绝、跨站请求被拒绝等用例；e2e 新增连续撤销/重做和备份恢复两个流程。
+- `inspector/PersonalInfoSection.vue`：个人信息 + 头部排版
+- `inspector/PageStyleSection.vue`：密度 / 页数 / 配色 / 字体 / 高级
+- `inspector/SectionContentEditor.vue`：模块标题与条目编辑（富文本按需加载）
+- `InspectorPanel.vue` 只剩编排，从 496 行降到约 40 行
 
-已知遗留：
+### 3. 撤销语义统一为「按焦点路由」
 
-1. 桌面安装包仍未内置服务端 `node_modules` 和 Chromium，干净机器上导出服务无法启动。需要把服务端打成 sidecar 二进制，并在首次导出时下载或复用系统浏览器。
-2. 预览与导出已共用样式，但页面结构仍由 `ResumePreview.vue` 模板和 `renderResumeHtml` 各写一份。两边改动结构时需要同步，后续可考虑预览直接渲染 `renderResumeHtml` 的结果。
-3. 撤销栈只存在内存中，刷新页面后清空；跨会话的回退依赖历史版本。
+- 焦点在正文编辑器 → 走编辑器自身的撤销（按字符/按段，粒度更细）
+- 焦点在别处 → 走应用历史栈（按保存点，覆盖加模块、删模块、排序等结构修改）
+- 撤销/重做按钮与 `Ctrl/⌘+Z`、`Ctrl/⌘+Shift+Z` 走同一套路由，输入框内保留浏览器原生撤销
+- 顺带修掉「一次结构操作写两条历史」：结构修改改走自动保存的防抖队列（`scheduleSave`），不再在 store 里立即落盘
+- 工具栏在脏状态下显示「保存中…」，并暴露 `data-dirty` 供自动化等待真实落盘
+
+### 4. 首屏分包
+
+- JD 体检弹窗、Tiptap 富文本编辑器改为异步组件
+- 主包从 548 kB（gzip 183 kB）降到 151 kB（gzip 55 kB）；Tiptap 单独成 394 kB 的按需 chunk，构建不再有超限告警
+
+### 5. 收尾：把上一版列出的遗留逐条消掉
+
+- **单条内容比一整页还高**：测量后按实测高度再切一次（句号分句、必要时均分要点），续段标「（续）」；最多补两轮，避免循环。实测一条 2400 字的段落（18px/2.4 行距）被切成 4 页，预览 4 = PDF 4，且不再提示溢出
+- **预览自适应缩放**：按预览区宽度等比缩小纸张，1280 宽的屏幕上不再横向裁纸，页数旁显示缩放比例
+- **vitest 3 → 5**：vite 仍是 6.4，无需一起升级；`npm audit` 从「3 个漏洞（2 critical）」变成 **0 漏洞**
+- **视觉基线**：已提交 `tests/e2e/app.spec.ts-snapshots`，本机用 `npx playwright test --grep "visual baseline"` 校验，预期改动加 `--update-snapshots`
+
+### 6. 桌面端的 Windows 支持
+
+- **修掉编译不过的代码**：`src-tauri/src/lib.rs` 无条件用了 `std::os::unix::fs::PermissionsExt`，这个模块在 Windows 上根本不存在——之前这份代码在 Windows 上连编译都过不了
+- **node 探测跨平台化**：新增 `Program Files\nodejs`、`%LOCALAPPDATA%\Programs\nodejs`、nvm-windows、Scoop 等候选；版本目录同时识别 `bin/node`（macOS）与 `node.exe`（Windows）
+- **健康检查去掉 `sh -c "curl …"`**：Windows 上没有 `sh`，原写法会静默失效；改成直接连 TCP 127.0.0.1:4173
+- **Windows 上以 `CREATE_NO_WINDOW` 启动 node**，避免打开应用时闪一个控制台窗口；找不到 node 时不再 panic，改为记录日志并让前端提示
+- **修掉 `build:tauri` 的 Unix 写法**：`VITE_API_BASE_URL=... vite build` 在 Windows 的 cmd 下不成立，改成 `vite build --mode tauri` + 仓库内的 `.env.tauri`
+- **新增 `npm run desktop:doctor`**：按平台检查 Rust / MSVC / WebView2 / Xcode / hdiutil，缺什么就打印对应的安装命令
+- **CI 新增 `desktop` job**：在 `windows-latest`（自带 Rust + MSVC）上跑 `cargo check`，从此桌面壳的跨平台改动有编译反馈
+
+## 环境限制（不是代码遗留）
+
+1. 本机没有 Rust 与 MSVC 生成工具（`D:\Dev\Env\cargo` 是空的，`vswhere` 也不存在），且当前账号不是管理员，装不了 MSVC；所以 Windows 安装包要在装了工具链的机器上出，或者直接看 CI 的 `desktop` job。
+2. macOS 的 DMG 依赖 `hdiutil`、签名/公证依赖 Apple 开发者证书，只能在 macOS 上产出。
+3. 视觉基线依赖本机字体渲染，CI 上刻意跳过；换机器或换字体后用 `--update-snapshots` 重录即可。
+4. Tauri 桌包子进程在带沙箱的 GUI 环境里可能被系统拦截，需要在真机上复核一次启动与退出回收。
