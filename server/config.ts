@@ -12,10 +12,15 @@ export interface ServerConfig {
 }
 
 const getProjectRoot = (): string => {
-  const currentDir = path.dirname(fileURLToPath(import.meta.url))
-  return currentDir.includes(`${path.sep}dist-server${path.sep}`)
-    ? path.resolve(currentDir, '../..')
-    : path.resolve(currentDir, '..')
+  try {
+    const currentDir = path.dirname(fileURLToPath(import.meta.url))
+    return currentDir.includes(`${path.sep}dist-server${path.sep}`)
+      ? path.resolve(currentDir, '../..')
+      : path.resolve(currentDir, '..')
+  } catch {
+    // SEA/esbuild 打进 CJS 后没有 import.meta；以启动目录为项目根
+    return process.cwd()
+  }
 }
 
 const getDefaultChromeCandidates = (): string[] => {
