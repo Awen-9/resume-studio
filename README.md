@@ -338,4 +338,11 @@ npm run tauri:build
 
 应用启动时会按平台探测系统中的 Node（Homebrew / nvm / Program Files / Scoop 等常见位置，最后回退到 `PATH`），拉起 `dist-server` 里的导出服务，退出时回收子进程。Windows 上 node 子进程以无窗口方式启动，不会闪控制台。
 
+### 未签名安装包怎么打开
+
+当前发布包没有做代码签名，首次打开会被系统拦一次：
+
+- **macOS**：先双击打开一次，被拦后到「系统设置 → 隐私与安全性」点「仍要打开」。macOS 15 起右键「打开」已经不再生效；也可以在终端执行 `xattr -dr com.apple.quarantine "/Applications/Resume Studio.app"`。
+- **Windows**：SmartScreen 弹窗点「更多信息」，再点「仍要运行」。
+
 CI 里有一个 `desktop` job：在 `windows-latest` 上用 `cargo check` 编译桌面壳。本机没有 Rust + MSVC 时，`src-tauri` 的跨平台改动靠这个 job 兜底。

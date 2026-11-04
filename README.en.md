@@ -135,6 +135,13 @@ npm run tauri:build
 
 A Rust toolchain (`rustup`) is required. The output is written to `src-tauri/target/release/bundle/` (`Resume Studio.app` on macOS, ~10 MB). On launch, the app detects a system Node runtime and spawns the export service, reclaiming it on exit.
 
+### Opening an unsigned build
+
+Release packages are not code-signed yet, so the OS blocks the first launch:
+
+- **macOS**: double-click once, then open System Settings → Privacy & Security and click "Open Anyway". Right-click → Open no longer works on macOS 15+; alternatively run `xattr -dr com.apple.quarantine "/Applications/Resume Studio.app"`.
+- **Windows**: on the SmartScreen prompt, click "More info" and then "Run anyway".
+
 ## Architecture
 
 - `src/domain/resume`: resume model, defaults, parsing, backup parsing, content preparation, page packing (`layout.ts`), checks, and rendering
