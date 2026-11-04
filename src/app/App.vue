@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import EditorView from '@/features/editor/EditorView.vue'
 import HomeView from '@/features/home/HomeView.vue'
 // 这两个页面只在特定流程里出现，按需加载能让首屏少下载一块
@@ -15,18 +15,13 @@ import {
 } from '@/infrastructure/storage/indexedDbStorage'
 import type { ResumeDocument, TemplateId } from '@/domain/resume/model'
 import { createSampleDocument } from '@/domain/resume/defaults'
-import {
-  activeEditor,
-  textRedoAvailable,
-  textUndoAvailable,
-  touchEditor,
-} from '@/shared/ui/activeEditor'
 import { onUnexpectedError } from '@/shared/ui/errorBus'
 import { SYNC_KEY_PREFIX, useAutoSave } from './composables/useAutoSave'
 import { useBackup } from './composables/useBackup'
 import { useResumeImport } from './composables/useResumeImport'
 import { useResumeExport } from './composables/useResumeExport'
 import { useSectionEditing } from './composables/useSectionEditing'
+import { useShortcuts } from './composables/useShortcuts'
 
 const store = useResumeStore()
 const { dirty, scheduleSave, flushSave } = useAutoSave(store)
@@ -123,56 +118,7 @@ const { exporting, exportPdf, exportDocx, exportTxt, exportDocument } = useResum
 const { addSection, removeSection, moveSection, moveItem, removeItem, reorderSection } =
   useSectionEditing({ store, scheduleSave, showNotice })
 
-/**
- * 撤销/重做只有一个入口，粒度按焦点决定：
- * - 焦点在正文编辑器或输入框里 → 交给编辑器/浏览器自己的历史（按字符、按段）；
- * - 否则 → 走应用历史栈（按保存点，覆盖加模块、删条目、换版式这类结构修改）。
- *
- * 这样用户不需要记「哪个按钮是哪套语义」：Ctrl+Z 永远撤销刚才那一步，
- * 只是文本里更细、结构上更粗。
- */
-const canUndo = computed(() => textUndoAvailable() || store.canUndo)
-const canRedo = computed(() => textRedoAvailable() || store.canRedo)
-
-const undo = (): void => {
-  const editor = activeEditor.value
-  if (editor?.can().undo()) {
-    editor.commands.undo()
-    touchEditor()
-    return
-  }
-  void store.undo()
-}
-
-const redo = (): void => {
-  const editor = activeEditor.value
-  if (editor?.can().redo()) {
-    editor.commands.redo()
-    touchEditor()
-    return
-  }
-  void store.redo()
-}
-
-/** 输入框和正文编辑器里已经有原生/编辑器级撤销，别再插一手。 */
-const isTextEntryFocused = (): boolean =>
-  Boolean(document.activeElement?.closest('[contenteditable="true"], input, textarea, select'))
-
-const onKeyDown = (event: KeyboardEvent): void => {
-  if (!(event.metaKey || event.ctrlKey)) return
-  const key = event.key.toLowerCase()
-  if (key === 's') {
-    event.preventDefault()
-    void store.save()
-    showNotice('已保存到本机')
-    return
-  }
-  if (key === 'z' && !isTextEntryFocused()) {
-    event.preventDefault()
-    if (event.shiftKey) redo()
-    else undo()
-  }
-}
+const { canUndo, canRedo, undo, redo } = useShortcuts({ store, showNotice })
 
 const duplicateDocument = async (): Promise<void> => {
   await store.duplicate()
@@ -197,7 +143,6 @@ const onStorage = (event: { key: string | null }): void => {
 
 onMounted(() => {
   void store.init()
-  window.addEventListener('keydown', onKeyDown)
   window.addEventListener('storage', onStorage)
   // 组件里抛的错 / 未 catch 的 promise 统一在这里露个面，而不是只进 console
   stopErrorListener = onUnexpectedError((message) => {
@@ -212,7 +157,6 @@ watch(screen, async () => {
 })
 
 onUnmounted(() => {
-  window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('storage', onStorage)
   stopErrorListener?.()
 })
