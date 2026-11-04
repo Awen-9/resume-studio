@@ -91,5 +91,13 @@ export const useResumeImport = (options: ResumeImportOptions): ResumeImportApi =
     if (importSourceUrl.value) URL.revokeObjectURL(importSourceUrl.value)
   })
 
-  return { importReview, importSourceUrl, importSourceKind, importPdf, importDocx, confirmImport, cancelImport }
+  return {
+    importReview,
+    importSourceUrl,
+    importSourceKind,
+    importPdf,
+    importDocx,
+    confirmImport,
+    cancelImport,
+  }
 }

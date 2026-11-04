@@ -10,9 +10,7 @@ const InterviewView = defineAsyncComponent(() => import('@/features/interview/In
 const AgentView = defineAsyncComponent(() => import('@/features/agent/AgentView.vue'))
 const SettingsView = defineAsyncComponent(() => import('@/features/settings/SettingsView.vue'))
 import { useResumeStore } from '@/infrastructure/state/resumeStore'
-import {
-  loadStoredDocument,
-} from '@/infrastructure/storage/indexedDbStorage'
+import { loadStoredDocument } from '@/infrastructure/storage/indexedDbStorage'
 import type { ResumeDocument, TemplateId } from '@/domain/resume/model'
 import { createSampleDocument } from '@/domain/resume/defaults'
 import { onUnexpectedError } from '@/shared/ui/errorBus'
@@ -92,21 +90,28 @@ const retryInit = (): void => {
   void store.init()
 }
 
-const { importReview, importSourceUrl, importSourceKind, importPdf, importDocx, confirmImport, cancelImport } =
-  useResumeImport({
-    store,
-    notice,
-    showNotice,
-    goReview: () => {
-      screen.value = 'import-review'
-    },
-    goEditor: () => {
-      screen.value = 'editor'
-    },
-    goHome: () => {
-      screen.value = 'home'
-    },
-  })
+const {
+  importReview,
+  importSourceUrl,
+  importSourceKind,
+  importPdf,
+  importDocx,
+  confirmImport,
+  cancelImport,
+} = useResumeImport({
+  store,
+  notice,
+  showNotice,
+  goReview: () => {
+    screen.value = 'import-review'
+  },
+  goEditor: () => {
+    screen.value = 'editor'
+  },
+  goHome: () => {
+    screen.value = 'home'
+  },
+})
 
 const { exporting, exportPdf, exportDocx, exportTxt, exportDocument } = useResumeExport({
   store,
