@@ -64,10 +64,16 @@ export const usesCompactHeader = (profile: ResumeProfile): boolean =>
  */
 const renderProfileHeader = (document: ResumeDocument): string => {
   const profile = document.profile
+  const contact = profileFields(document).map(escapeHtml).join('  |  ')
   if (usesCompactHeader(profile)) {
-    return `<header class="resume-header resume-header--compact"><h1>${escapeHtml([profile.displayTitle, profile.name].filter(Boolean).join(' ') || '未填写姓名')}</h1><p class="resume-header__meta">${profileFields(document).map(escapeHtml).join('  |  ')}</p>${profile.detail ? `<p class="resume-header__detail">${escapeHtml(profile.detail)}</p>` : ''}<p class="resume-header__headline">${escapeHtml(profile.headline || '目标职位')}</p></header>`
+    const displayName =
+      [profile.displayTitle, profile.name].filter(Boolean).join(' ') || '未填写姓名'
+    const detail = profile.detail
+      ? `<p class="resume-header__detail">${escapeHtml(profile.detail)}</p>`
+      : ''
+    return `<header class="resume-header resume-header--compact"><h1>${escapeHtml(displayName)}</h1><p class="resume-header__meta">${contact}</p>${detail}<p class="resume-header__headline">${escapeHtml(profile.headline || '目标职位')}</p></header>`
   }
-  return `<header class="resume-header"><h1>${escapeHtml(profile.name || '未填写姓名')}</h1><p class="resume-header__headline">${escapeHtml(profile.headline || '目标职位')}</p><p class="resume-header__meta">${profileFields(document).map(escapeHtml).join('  |  ')}</p></header>`
+  return `<header class="resume-header"><h1>${escapeHtml(profile.name || '未填写姓名')}</h1><p class="resume-header__headline">${escapeHtml(profile.headline || '目标职位')}</p><p class="resume-header__meta">${contact}</p></header>`
 }
 
 /**
@@ -84,9 +90,18 @@ const renderItem = (
   const content = stripHtml(item.content)
     ? `<div class="resume-rich-text">${emphasizeLeadInHtml(sanitizeRichHtml(item.content))}</div>`
     : ''
-  return `<div class="resume-item"${measureKey ? ` data-measure-item="${escapeHtml(measureKey)}"` : ''}>
-    ${item.title || item.period ? `<div class="resume-item__heading"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.period)}</span></div>` : ''}
-    ${item.subtitle || item.location ? `<div class="resume-item__subheading"><span>${escapeHtml(item.subtitle)}</span><span>${escapeHtml(item.location)}</span></div>` : ''}
+  const measureAttr = measureKey ? ` data-measure-item="${escapeHtml(measureKey)}"` : ''
+  const heading =
+    item.title || item.period
+      ? `<div class="resume-item__heading"><strong>${escapeHtml(item.title)}</strong><span>${escapeHtml(item.period)}</span></div>`
+      : ''
+  const subheading =
+    item.subtitle || item.location
+      ? `<div class="resume-item__subheading"><span>${escapeHtml(item.subtitle)}</span><span>${escapeHtml(item.location)}</span></div>`
+      : ''
+  return `<div class="resume-item"${measureAttr}>
+    ${heading}
+    ${subheading}
     ${content}${bullets}
   </div>`
 }
