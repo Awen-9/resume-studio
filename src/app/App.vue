@@ -1,8 +1,5 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import {
-  exportResumeFile,
-} from '@/infrastructure/api/localResumeApi'
 import EditorView from '@/features/editor/EditorView.vue'
 import HomeView from '@/features/home/HomeView.vue'
 // 这两个页面只在特定流程里出现，按需加载能让首屏少下载一块
@@ -25,21 +22,11 @@ import {
   textUndoAvailable,
   touchEditor,
 } from '@/shared/ui/activeEditor'
-import { downloadFile } from '@/shared/utils/fileDownload'
 import { onUnexpectedError } from '@/shared/ui/errorBus'
-import { resumeToPlainText } from '@/domain/interview'
 import { SYNC_KEY_PREFIX, useAutoSave } from './composables/useAutoSave'
 import { useBackup } from './composables/useBackup'
 import { useResumeImport } from './composables/useResumeImport'
-
-/** 文件名里不能出现这些字符，导入的标题常带空格和斜杠（`吴**` 会被替换成 `吴--`）。 */
-const toSafeFileName = (title: string): string =>
-  title
-    .replace(/[\\/:*?"<>|]/g, '-')
-    .replace(/-{2,}/g, '-')
-    .replace(/\s+/g, ' ')
-    .replace(/^[-\s]+|[-\s]+$/g, '')
-    .trim() || 'resume'
+import { useResumeExport } from './composables/useResumeExport'
 
 const store = useResumeStore()
 const { dirty, scheduleSave, flushSave } = useAutoSave(store)
@@ -126,94 +113,12 @@ const { importReview, importSourceUrl, importSourceKind, importPdf, importDocx, 
     },
   })
 
-/**
- * 导出中标记：生成 PDF 要几秒，这期间再点一次会并发跑两个无头 Chromium，
- * 所以按钮要禁用，重复调用也直接忽略。
- */
-const exporting = ref(false)
-
-/**
- * 导出文件名：有真实姓名时用「姓名-岗位-简历」，比「未命名简历.pdf」更像成品，
- * 投递时 HR 也更容易认出来。
- */
-const exportFileName = (format: 'pdf' | 'docx', doc?: ResumeDocument): string => {
-  const document = doc ?? store.currentDocument
-  const { name, headline } = document.profile
-  const cleanName = name.trim()
-  const base =
-    cleanName && cleanName !== '你的姓名'
-      ? [cleanName, headline.trim(), '简历'].filter(Boolean).join('-')
-      : document.title
-  return `${toSafeFileName(base)}.${format}`
-}
-
-const exportResume = async (format: 'pdf' | 'docx'): Promise<void> => {
-  if (exporting.value) return
-  exporting.value = true
-  const label = format === 'pdf' ? 'PDF' : 'Word'
-  await flushSave()
-  notice.value = `正在生成 ${label}...`
-  try {
-    const blob = await exportResumeFile(store.currentDocument, format)
-    downloadFile(
-      blob,
-      exportFileName(format),
-      format === 'pdf'
-        ? 'application/pdf'
-        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    )
-    exporting.value = false
-    showNotice(`${label} 已导出`, { label: '再导一次', run: () => void exportResume(format) })
-  } catch (error) {
-    exporting.value = false
-    notice.value = ''
-    showNotice(error instanceof Error ? error.message : `${label} 导出失败`)
-  }
-}
-
-const exportTxt = async (): Promise<void> => {
-  await flushSave()
-  const text = resumeToPlainText(store.currentDocument)
-  const blob = new Blob([text], { type: 'text/plain;charset=utf-8' })
-  downloadFile(blob, `${toSafeFileName(store.currentDocument.title)}.txt`, 'text/plain')
-  showNotice('纯文本已导出')
-}
-
-const exportPdf = (): Promise<void> => exportResume('pdf')
-const exportDocx = (): Promise<void> => exportResume('docx')
-
-/** 首页直接导出某份简历，不用先进编辑器。 */
-const exportDocument = async (id: string, format: 'pdf' | 'docx' | 'txt'): Promise<void> => {
-  try {
-    const document = await loadStoredDocument(id)
-    if (!document) {
-      showNotice('简历不存在或已被删除')
-      return
-    }
-    if (format === 'txt') {
-      const text = resumeToPlainText(document)
-      downloadFile(
-        new Blob([text], { type: 'text/plain;charset=utf-8' }),
-        `${toSafeFileName(document.title)}.txt`,
-        'text/plain',
-      )
-      showNotice('纯文本已导出')
-      return
-    }
-    showNotice(`正在生成 ${format === 'pdf' ? 'PDF' : 'Word'}...`)
-    const blob = await exportResumeFile(document, format)
-    downloadFile(
-      blob,
-      exportFileName(format, document),
-      format === 'pdf'
-        ? 'application/pdf'
-        : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    )
-    showNotice(`${format === 'pdf' ? 'PDF' : 'Word'} 已导出`)
-  } catch (error) {
-    showNotice(error instanceof Error ? error.message : '导出失败')
-  }
-}
+const { exporting, exportPdf, exportDocx, exportTxt, exportDocument } = useResumeExport({
+  store,
+  flushSave,
+  notice,
+  showNotice,
+})
 
 /**
  * 结构修改统一走自动保存的防抖队列。
