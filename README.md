@@ -39,7 +39,7 @@
 - 超长内容块的段落级自动拆分（单条经历跨页时按句子边界切分为「（续）」条目）
 - 配色预设与字体预设快速换肤
 - 环境自愈安装脚本（自动修复 rollup 原生包缺失与 macOS Gatekeeper 拦截）
-- Tauri 桌面打包支持（`npm run tauri:build` 产出约 10 MB 的原生应用）
+- Tauri 桌面打包支持（`npm run tauri:build`，安装包自带 Node 运行时，约 300 MB）
 - 本机模型 AI 改写：流式增量预览，采用后是一次事务，Ctrl+Z 可整段撤回
 - 简历 Agent：用 LangGraph.js 的 StateGraph 编排意图判断、匹配分析、改写和出题，工具由模型按需调用
 - 多轮会话：checkpointer 按 thread_id 保存图状态，同一个会话可以连续追问
@@ -55,7 +55,6 @@
 - 模板在线下载和模板编辑器
 - 云端同步、登录、分享链接和跨设备访问
 - 云端 AI、ATS 评分和求职投递管理（默认走本机 Ollama；在设置页选择 DeepSeek 后，简历和 JD 会发到 DeepSeek 的服务器）
-- 桌面端 sidecar 二进制化（当前桌面包依赖系统 Node 运行时）
 - Docker 镜像
 
 ## 技术栈
@@ -336,7 +335,7 @@ npm run tauri:build
 - **macOS**：Xcode 命令行工具（`xcode-select --install`）、`hdiutil`（系统自带）
 - **Linux**：`pkg-config`、webkit2gtk 等系统依赖
 
-应用启动时会按平台探测系统中的 Node（Homebrew / nvm / Program Files / Scoop 等常见位置，最后回退到 `PATH`），拉起 `dist-server` 里的导出服务，退出时回收子进程。Windows 上 node 子进程以无窗口方式启动，不会闪控制台。
+安装包自带 Node 运行时和后端代码：启动时直接拉起包内的 node 与 `server-bundle`，用户不需要另装 Node；退出时回收子进程。Windows 上 node 子进程以无窗口方式启动，不会闪控制台。
 
 ### 未签名安装包怎么打开
 

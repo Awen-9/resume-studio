@@ -17,3 +17,6 @@ test-results
 *.tmpdir
 # 本机沙箱 ACL 修复的报告与回滚记录（机器相关，不入库）
 .dsh-acl-report/
+# 桌面端 sidecar：下载的 Node 运行时与暂存的生产依赖，由 npm run build:sidecar 生成
+src-tauri/binaries/
+src-tauri/server-bundle/

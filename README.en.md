@@ -26,7 +26,7 @@ It is intentionally designed for personal local use. There is no login, payment,
 - AI rewrite through a local model: streaming preview, applied as a single transaction so Ctrl+Z reverts it whole.
 - Job description matcher with fast/deep modes; deep mode quotes the resume line behind every matched keyword.
 - Self-healing setup script that repairs missing native dependencies and macOS Gatekeeper quarantine.
-- Tauri desktop packaging (`npm run tauri:build`, ~10 MB native app).
+- Tauri desktop packaging (`npm run tauri:build`; the installer bundles a Node runtime, ~300 MB).
 - Run unit, integration, browser E2E, lint, formatting, and build checks locally or in GitHub Actions.
 
 ## Not Included
@@ -34,7 +34,6 @@ It is intentionally designed for personal local use. There is no login, payment,
 - OCR for scanned/image-only PDFs (status detection is ready; recognition requires installing Tesseract)
 - Cloud sync, accounts, sharing links, payments, or remote storage
 - Cloud AI, ATS scoring, application tracking, or career assessments (AI runs on a local Ollama by default; choosing DeepSeek sends the resume and JD to DeepSeek's servers)
-- Desktop sidecar binary (the current desktop build depends on a system Node runtime)
 - Docker image or hosted deployment
 
 ## Requirements
@@ -133,7 +132,7 @@ If Tesseract is not on the default `PATH`, set `TESSERACT_CMD=/path/to/tesseract
 npm run tauri:build
 ```
 
-A Rust toolchain (`rustup`) is required. The output is written to `src-tauri/target/release/bundle/` (`Resume Studio.app` on macOS, ~10 MB). On launch, the app detects a system Node runtime and spawns the export service, reclaiming it on exit.
+A Rust toolchain (`rustup`) is required. The output is written to `src-tauri/target/release/bundle/` (`Resume Studio.app` on macOS, ~300 MB including the bundled Node runtime). The installer bundles a Node runtime and the compiled server; on launch it starts that bundled Node and reclaims it on exit.
 
 ### Opening an unsigned build
 
