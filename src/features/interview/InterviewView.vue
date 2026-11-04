@@ -462,6 +462,7 @@ const unfavorite = (id: string): void => {
       <section class="interview-results">
         <details v-if="resumeSummary" class="question-card" open>
           <summary>简历摘要（AI 总结，出题以此为准）</summary>
+          <!-- eslint-disable-next-line vue/no-v-html -- 内容经 renderAnswerHtml 转义 -->
           <p class="answer-body" v-html="renderAnswerHtml(resumeSummary)" />
         </details>
         <p v-if="!results.length && !generating" class="muted-text">
@@ -495,6 +496,7 @@ const unfavorite = (id: string): void => {
           <h3>{{ item.question }}</h3>
           <details>
             <summary>查看答案</summary>
+            <!-- eslint-disable-next-line vue/no-v-html -- 内容经 renderAnswerHtml 转义 -->
             <p class="answer-body" v-html="renderAnswerHtml(item.answer)" />
             <button
               type="button"
@@ -557,10 +559,12 @@ const unfavorite = (id: string): void => {
                 {{ activeFavorite.model || '本地模型' }}
               </p>
               <h4>参考答案</h4>
+              <!-- eslint-disable vue/no-v-html -- 内容经 renderAnswerHtml 转义 -->
               <p
                 class="favorites-detail__answer answer-body"
                 v-html="renderAnswerHtml(activeFavorite.answer)"
               />
+              <!-- eslint-enable vue/no-v-html -->
               <h4>岗位描述</h4>
               <pre class="favorites-detail__pre">{{ activeFavorite.jd || '（未记录）' }}</pre>
               <h4>简历（{{ activeFavorite.resumeTitle || '未记录' }}）</h4>

@@ -250,6 +250,7 @@ const discardRewrite = (): void => {
         </span>
       </div>
       <!-- pendingHtml 里的文本已逐行转义，只包含我们自己生成的 <p>/<ul>/<strong> 标签 -->
+      <!-- eslint-disable-next-line vue/no-v-html -- 内容经 buildHtml 逐行 escapeHtml -->
       <div class="rich-editor__ai-preview-body" v-html="pendingHtml"></div>
     </div>
 

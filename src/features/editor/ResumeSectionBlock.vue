@@ -42,11 +42,13 @@ const items = computed(() =>
         <span>{{ item.subtitle }}</span>
         <span>{{ item.location }}</span>
       </div>
+      <!-- eslint-disable vue/no-v-html -- 内容经 sanitizeRichHtml 清洗后才渲染 -->
       <div
         v-if="item.content"
         class="resume-rich-text"
         v-html="emphasizeLeadInHtml(sanitizeRichHtml(item.content))"
       />
+      <!-- eslint-enable vue/no-v-html -->
       <ul v-if="item.bullets.length" class="resume-bullets">
         <li v-for="(bullet, bulletIndex) in item.bullets" :key="`${item.id}-${bulletIndex}`">
           {{ bullet }}
