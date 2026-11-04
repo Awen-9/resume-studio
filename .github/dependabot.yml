@@ -5,3 +5,12 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    ignore:
+      # typescript-eslint 和 vue-tsc 还不支持 TS 6.1+，等它们跟上再手动升
+      - dependency-name: typescript
+        versions: ['>=6.1.0']
+      # @eslint/js 要和 eslint 同步升主版本
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
+      - dependency-name: eslint
+        update-types: ['version-update:semver-major']
