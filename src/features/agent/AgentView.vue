@@ -158,18 +158,16 @@ const askFollowUp = (): void => {
 
 const stop = (): void => controller.value?.abort()
 
-/** 确认改写：accept 先写回本地简历，再让图继续跑完；reject 只收尾。 */
+/** 确认改写：先让图继续执行，成功后再写回本地简历；请求失败时简历保持原样。 */
 const settleRewrite = async (decision: 'accept' | 'reject'): Promise<void> => {
   const proposal = pendingProposal.value
   if (!proposal || running.value) return
   running.value = true
   errorMessage.value = ''
   const accepted = [...selectedEdits.value].sort((a, b) => a - b)
+  const edits =
+    decision === 'accept' ? accepted.map((index) => proposal.edits[index]).filter(Boolean) : []
   try {
-    if (decision === 'accept') {
-      const edits = accepted.map((index) => proposal.edits[index]).filter(Boolean)
-      await applyEdits(edits)
-    }
     const result = await resumeAgentStream(
       {
         threadId: threadId.value,
@@ -183,6 +181,17 @@ const settleRewrite = async (decision: 'accept' | 'reject'): Promise<void> => {
         },
       },
     )
+
+    if (decision === 'accept') {
+      try {
+        await applyEdits(edits)
+      } catch (error) {
+        errorMessage.value = `改写已确认，但写回本地简历失败：${
+          error instanceof Error ? error.message : '未知错误'
+        }`
+      }
+    }
+
     answer.value = result.answer
     turns.value = [
       ...turns.value,
