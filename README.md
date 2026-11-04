@@ -345,4 +345,10 @@ npm run tauri:build
 - **macOS**：先双击打开一次，被拦后到「系统设置 → 隐私与安全性」点「仍要打开」。macOS 15 起右键「打开」已经不再生效；也可以在终端执行 `xattr -dr com.apple.quarantine "/Applications/Resume Studio.app"`。
 - **Windows**：SmartScreen 弹窗点「更多信息」，再点「仍要运行」。
 
+### 发布流程
+
+1. 把 `package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 三处的 `version` 改成同一个版本号；
+2. 提交后打 tag 并推送：`git tag v0.1.0 && git push origin v0.1.0`；
+3. `.github/workflows/release.yml` 会在 macOS 和 Windows 上分别打包，产物挂到同名的草稿 Release，确认无误后手动发布。
+
 CI 里有一个 `desktop` job：在 `windows-latest` 上用 `cargo check` 编译桌面壳。本机没有 Rust + MSVC 时，`src-tauri` 的跨平台改动靠这个 job 兜底。

@@ -142,6 +142,12 @@ Release packages are not code-signed yet, so the OS blocks the first launch:
 - **macOS**: double-click once, then open System Settings → Privacy & Security and click "Open Anyway". Right-click → Open no longer works on macOS 15+; alternatively run `xattr -dr com.apple.quarantine "/Applications/Resume Studio.app"`.
 - **Windows**: on the SmartScreen prompt, click "More info" and then "Run anyway".
 
+### Release process
+
+1. Set the same version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`.
+2. Commit, then tag and push: `git tag v0.1.0 && git push origin v0.1.0`.
+3. `.github/workflows/release.yml` builds on macOS and Windows and attaches the artifacts to a draft release with the same name; publish it manually after checking.
+
 ## Architecture
 
 - `src/domain/resume`: resume model, defaults, parsing, backup parsing, content preparation, page packing (`layout.ts`), checks, and rendering

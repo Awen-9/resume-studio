@@ -61,7 +61,7 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: Resume Studio ${{ github.ref_name }}
           releaseBody: |
-            macOS：下载 .dmg。首次打开被拦时，到"系统设置 → 隐私与安全性"点"仍要打开"。
+            macOS：下载 .dmg。首次打开被拦时，到"系统设置 → 隐私与安全性"点"仍要打开"；macOS 15 起右键"打开"不再生效。也可以在终端执行 `xattr -dr com.apple.quarantine "/Applications/Resume Studio.app"`。
             Windows：下载 .exe 或 .msi。SmartScreen 提示时点"更多信息"，再点"仍要运行"。
           releaseDraft: true
           args: ${{ matrix.args }}
