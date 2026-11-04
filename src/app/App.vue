@@ -1,10 +1,7 @@
 <script setup lang="ts">
 import { computed, defineAsyncComponent, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import {
-  importResumePdf,
-  importResumeDocx,
   exportResumeFile,
-  type ImportFileKind,
 } from '@/infrastructure/api/localResumeApi'
 import EditorView from '@/features/editor/EditorView.vue'
 import HomeView from '@/features/home/HomeView.vue'
@@ -19,7 +16,6 @@ import { useResumeStore } from '@/infrastructure/state/resumeStore'
 import {
   loadStoredDocument,
 } from '@/infrastructure/storage/indexedDbStorage'
-import type { ResumeImportResult } from '@/domain/resume/importParser'
 import type { ResumeDocument, SectionType, TemplateId } from '@/domain/resume/model'
 import { cloneResume } from '@/domain/resume/validation'
 import { createSampleDocument } from '@/domain/resume/defaults'
@@ -34,6 +30,7 @@ import { onUnexpectedError } from '@/shared/ui/errorBus'
 import { resumeToPlainText } from '@/domain/interview'
 import { SYNC_KEY_PREFIX, useAutoSave } from './composables/useAutoSave'
 import { useBackup } from './composables/useBackup'
+import { useResumeImport } from './composables/useResumeImport'
 
 /** 文件名里不能出现这些字符，导入的标题常带空格和斜杠（`吴**` 会被替换成 `吴--`）。 */
 const toSafeFileName = (title: string): string =>
@@ -50,8 +47,6 @@ const screen = ref<'home' | 'editor' | 'import-review' | 'interview' | 'agent' |
 const notice = ref('')
 /** toast 上的可选操作（例如「撤销删除」），没有操作时 2.4s 自动消失。 */
 const noticeAction = ref<{ label: string; run: () => void } | null>(null)
-const importReview = ref<ResumeImportResult | null>(null)
-const importSourceUrl = ref('')
 const shellRef = ref<HTMLElement | null>(null)
 /** 意外错误的订阅句柄；卸载时退订。 */
 let stopErrorListener: (() => void) | undefined
@@ -115,55 +110,21 @@ const retryInit = (): void => {
   void store.init()
 }
 
-/** PDF 与 Word 走同一条确认流程，只是来源和文案不同。 */
-const importSourceKind = ref<ImportFileKind>('pdf')
-/** 最近一次导入的文件：失败了要给「重试」，不用让用户重新选一遍。 */
-let lastImport: { file: File; kind: ImportFileKind } | null = null
-
-const startImport = async (file: File, kind: ImportFileKind): Promise<void> => {
-  lastImport = { file, kind }
-  importSourceKind.value = kind
-  notice.value = kind === 'pdf' ? '正在解析 PDF 简历...' : '正在解析 Word 简历...'
-  if (importSourceUrl.value) URL.revokeObjectURL(importSourceUrl.value)
-  importSourceUrl.value = URL.createObjectURL(file)
-  try {
-    importReview.value = kind === 'pdf' ? await importResumePdf(file) : await importResumeDocx(file)
-    notice.value = ''
-    screen.value = 'import-review'
-  } catch (error) {
-    URL.revokeObjectURL(importSourceUrl.value)
-    importSourceUrl.value = ''
-    notice.value = ''
-    const message =
-      error instanceof Error ? error.message : `${kind === 'pdf' ? 'PDF' : 'Word'} 导入失败`
-    showNotice(message, {
-      label: '重试',
-      run: () => {
-        if (lastImport) void startImport(lastImport.file, lastImport.kind)
-      },
-    })
-  }
-}
-
-const importPdf = (file: File): Promise<void> => startImport(file, 'pdf')
-const importDocx = (file: File): Promise<void> => startImport(file, 'docx')
-
-const confirmImport = async (): Promise<void> => {
-  if (!importReview.value) return
-  await store.importDocument(importReview.value.document)
-  importReview.value = null
-  URL.revokeObjectURL(importSourceUrl.value)
-  importSourceUrl.value = ''
-  screen.value = 'editor'
-  showNotice(`${importSourceKind.value === 'pdf' ? 'PDF' : 'Word'} 已导入模板`)
-}
-
-const cancelImport = (): void => {
-  importReview.value = null
-  URL.revokeObjectURL(importSourceUrl.value)
-  importSourceUrl.value = ''
-  screen.value = 'home'
-}
+const { importReview, importSourceUrl, importSourceKind, importPdf, importDocx, confirmImport, cancelImport } =
+  useResumeImport({
+    store,
+    notice,
+    showNotice,
+    goReview: () => {
+      screen.value = 'import-review'
+    },
+    goEditor: () => {
+      screen.value = 'editor'
+    },
+    goHome: () => {
+      screen.value = 'home'
+    },
+  })
 
 /**
  * 导出中标记：生成 PDF 要几秒，这期间再点一次会并发跑两个无头 Chromium，
@@ -413,7 +374,6 @@ onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('storage', onStorage)
   stopErrorListener?.()
-  if (importSourceUrl.value) URL.revokeObjectURL(importSourceUrl.value)
 })
 </script>
 
