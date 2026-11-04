@@ -25,6 +25,18 @@ import {
   type RewriteResult,
 } from './state.js'
 import { buildAgentTools } from './tools.js'
+import {
+  ANALYZE_PROMPT,
+  CLASSIFY_PROMPT,
+  INTERVIEW_PROMPT,
+  REWRITE_PROMPT,
+  buildAnalyzeInput,
+  buildClassifyInput,
+  buildDraftRewriteInput,
+  buildInterviewInput,
+  buildQaSystemPrompt,
+  buildRewriteInput,
+} from './prompts.js'
 
 /**
  * 简历 Agent 的 LangGraph 编排。
@@ -46,38 +58,8 @@ const emitStep = (step: AgentStep): void => {
   getWriter()?.({ type: 'step', step })
 }
 
-const truncate = (text: string, limit = 4000): string =>
-  text.length > limit ? `${text.slice(0, limit)}\n…（已截断）` : text
-
 const textOf = (content: unknown): string =>
   typeof content === 'string' ? content : JSON.stringify(content)
-
-const CLASSIFY_PROMPT = `你是简历助手的意图分类器。只输出 JSON 对象，不要解释、不要代码块。
-字段：intent（只能是 analyze / rewrite / interview / qa 之一）、reason（一句话）。
-判断规则：
-- analyze：岗位匹配、打分、差距分析、点评简历
-- rewrite：改写、润色、优化简历里的句子
-- interview：出面试题、模拟面试、准备回答
-- qa：其他提问、追问、解释简历内容
-`
-
-const ANALYZE_PROMPT = `你是简历与岗位匹配分析器。根据简历和 JD 打分并给出可执行建议。
-只输出 JSON：{"score":0-100,"summary":"两句话以内的总评","matched":["已满足的要求"],"missing":["缺失的要求"],"suggestions":[{"title":"短标题","detail":"具体怎么改"}]}
-只依据给出的内容判断，不要编造经历；缺少关键要求时不要给高分。
-`
-
-const REWRITE_PROMPT = `你在改写中文简历。只改写、不扩写、不编造。
-只输出 JSON：{"summary":"整体思路","edits":[{"before":"简历原文","after":"改写后","reason":"为什么这样改"}]}
-要求：before 必须是简历里原样出现的句子；每条 after 不超过 50 个汉字；最多 5 条。
-`
-
-const INTERVIEW_PROMPT = `你是面试官。根据岗位和简历出题，题目要能验证简历里的经历。
-只输出 JSON：{"questions":[{"type":"场景题/八股/基础知识/算法/项目深挖","difficulty":"简单/中等/困难","question":"题目","answer":"参考答案，分点说明"}]}
-`
-
-const QA_PROMPT = `你是简历助手。回答用户关于简历和岗位的问题。
-可以调用工具读取简历模块、读取 JD、生成改写稿；需要细节时先调用工具，不要凭空猜测。
-回答用中文，简洁、具体，必要时分点。`
 
 /** 结构化输出偶尔失败时的兜底：按关键词判断意图，避免整个请求挂掉。 */
 const guessIntent = (goal: string): AgentIntent => {
@@ -127,10 +109,9 @@ export const buildAgentGraph = (request: ModelRequest) => {
   const model = createChatModel(request)
 
   const draftRewrite = async (target: string, instruction?: string): Promise<RewriteResult> => {
-    const hints = instruction?.trim() ? `\n额外要求：${instruction.trim()}` : ''
     return invokeStructured(model, rewriteSchema, [
       new SystemMessage(REWRITE_PROMPT),
-      new HumanMessage(`要改写的原文：\n${target}${hints}`),
+      new HumanMessage(buildDraftRewriteInput(target, instruction)),
     ])
   }
 
@@ -143,9 +124,7 @@ export const buildAgentGraph = (request: ModelRequest) => {
     try {
       const result = await invokeStructured(model, intentSchema, [
         new SystemMessage(CLASSIFY_PROMPT),
-        new HumanMessage(
-          `最近对话：\n${history || '（无）'}\n\n本次目标：${state.goal}\n\n只输出 {"intent":"...","reason":"..."}。`,
-        ),
+        new HumanMessage(buildClassifyInput(history, state.goal)),
       ])
       intent = result.intent
     } catch {
@@ -163,9 +142,7 @@ export const buildAgentGraph = (request: ModelRequest) => {
   const analyzeNode = async (state: AgentState): Promise<Partial<AgentState>> => {
     const result = await invokeStructured(model, matchSchema, [
       new SystemMessage(ANALYZE_PROMPT),
-      new HumanMessage(
-        `简历：\n${truncate(state.resume)}\n\n岗位描述：\n${state.jd ? truncate(state.jd, 3000) : '（用户没有提供 JD，请按简历本身给通用点评）'}`,
-      ),
+      new HumanMessage(buildAnalyzeInput(state.resume, state.jd)),
     ])
     const step: AgentStep = { tool: 'analyze_match', args: {}, result }
     emitStep(step)
@@ -176,9 +153,7 @@ export const buildAgentGraph = (request: ModelRequest) => {
   const rewriteDraftNode = async (state: AgentState): Promise<Partial<AgentState>> => {
     const result = await invokeStructured(model, rewriteSchema, [
       new SystemMessage(REWRITE_PROMPT),
-      new HumanMessage(
-        `简历：\n${truncate(state.resume)}\n\n岗位描述：\n${state.jd ? truncate(state.jd, 3000) : '（未提供）'}\n\n本次目标：${state.goal}`,
-      ),
+      new HumanMessage(buildRewriteInput(state.resume, state.jd, state.goal)),
     ])
     const proposal = groundEdits(state.resume, result)
     const step: AgentStep = { tool: 'draft_rewrite', args: {}, result: proposal }
@@ -218,9 +193,7 @@ export const buildAgentGraph = (request: ModelRequest) => {
   const interviewNode = async (state: AgentState): Promise<Partial<AgentState>> => {
     const result = await invokeStructured(model, questionsSchema, [
       new SystemMessage(INTERVIEW_PROMPT),
-      new HumanMessage(
-        `岗位描述：\n${state.jd ? truncate(state.jd, 3000) : '（未提供，按简历本身出题）'}\n\n简历：\n${truncate(state.resume)}\n\n目标：${state.goal}`,
-      ),
+      new HumanMessage(buildInterviewInput(state.resume, state.jd, state.goal)),
     ])
     const step: AgentStep = { tool: 'generate_questions', args: {}, result }
     emitStep(step)
@@ -235,9 +208,7 @@ export const buildAgentGraph = (request: ModelRequest) => {
     ).bindTools(tools)
     const collected: AgentStep[] = []
     const conversation: BaseMessage[] = [
-      new SystemMessage(
-        `${QA_PROMPT}\n\n简历：\n${truncate(state.resume)}\n\n岗位描述：\n${state.jd ? truncate(state.jd, 3000) : '（未提供）'}`,
-      ),
+      new SystemMessage(buildQaSystemPrompt(state.resume, state.jd)),
       ...state.messages,
     ]
 
