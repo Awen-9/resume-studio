@@ -87,7 +87,13 @@ export const renderResumePdf = async (
   resumeDocument: ResumeDocument,
   chromePath: string,
 ): Promise<Buffer> => {
-  const browser = await getBrowser(chromePath)
+  let browser: Browser
+  try {
+    browser = await getBrowser(chromePath)
+  } catch {
+    // 没装 Chrome/Chromium/Edge，也没跑过 npm run setup 下载 Playwright Chromium
+    throw new Error('PDF 导出需要 Chrome 或 Edge，请先安装其中一个')
+  }
   // 每次导出用独立的 context 隔离，结束后只关 context，复用浏览器进程
   const context = await browser.newContext({
     viewport: { width: 794, height: 1123 },

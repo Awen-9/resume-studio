@@ -13,7 +13,11 @@ export const registerExportPdfRoute = (server: FastifyInstance, chromePath: stri
       return reply.type('application/pdf').send(buffer)
     } catch (error) {
       request.log.error(error)
-      return reply.code(500).send({ message: 'PDF 导出失败' })
+      const message =
+        error instanceof Error && error.message.startsWith('PDF 导出需要')
+          ? error.message
+          : 'PDF 导出失败'
+      return reply.code(500).send({ message })
     }
   })
 }
