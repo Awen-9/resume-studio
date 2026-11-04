@@ -36,10 +36,9 @@ import {
 import { downloadFile } from '@/shared/utils/fileDownload'
 import { onUnexpectedError } from '@/shared/ui/errorBus'
 import { resumeToPlainText } from '@/domain/interview'
+import { SYNC_KEY_PREFIX, useAutoSave } from './composables/useAutoSave'
 
 const BACKUP_KEY = 'resume-studio:last-backup-at'
-/** 多标签页协作信号：每次保存写一条，其他标签页通过 storage 事件感知。 */
-const SYNC_KEY_PREFIX = 'resume-studio:saved:'
 /** 文件名里不能出现这些字符，导入的标题常带空格和斜杠（`吴**` 会被替换成 `吴--`）。 */
 const toSafeFileName = (title: string): string =>
   title
@@ -50,6 +49,7 @@ const toSafeFileName = (title: string): string =>
     .trim() || 'resume'
 
 const store = useResumeStore()
+const { dirty, scheduleSave, flushSave } = useAutoSave(store)
 const screen = ref<'home' | 'editor' | 'import-review' | 'interview' | 'agent' | 'settings'>('home')
 const notice = ref('')
 /** toast 上的可选操作（例如「撤销删除」），没有操作时 2.4s 自动消失。 */
@@ -58,9 +58,6 @@ const importReview = ref<ResumeImportResult | null>(null)
 const importSourceUrl = ref('')
 const shellRef = ref<HTMLElement | null>(null)
 const lastBackupAt = ref<string | null>(window.localStorage.getItem(BACKUP_KEY))
-/** 有待写入的编辑（防抖窗口内或保存失败），用于关闭页面前的提醒。 */
-const dirty = ref(false)
-let saveTimer: number | undefined
 /** 意外错误的订阅句柄；卸载时退订。 */
 let stopErrorListener: (() => void) | undefined
 
@@ -76,38 +73,6 @@ const showNotice = (message: string, action?: { label: string; run: () => void }
 }
 
 /** 自动保存是背景行为，不再每 350ms 弹一次 toast——工具栏已有「已保存 hh:mm」。 */
-const scheduleSave = (): void => {
-  dirty.value = true
-  if (saveTimer) window.clearTimeout(saveTimer)
-  saveTimer = window.setTimeout(async () => {
-    try {
-      await store.save()
-      dirty.value = Boolean(store.storageError)
-      // 通知其他标签页：这份简历变了
-      window.localStorage.setItem(
-        `${SYNC_KEY_PREFIX}${store.currentDocument.id}`,
-        String(Date.now()),
-      )
-    } catch {
-      // store.save 内部已记录失败原因并以横幅展示，这里只保住 dirty 状态
-      dirty.value = true
-    }
-  }, 350)
-}
-
-/**
- * 立即落盘：把还在 350ms 防抖里的保存取消掉、当场写完。
- * 导出备份、返回列表、导出文件之前都要等它，否则会按 IndexedDB 里的旧数据走，
- * 最后一次改动就丢了（备份文件里少了刚填的内容）。
- */
-const flushSave = async (): Promise<void> => {
-  if (saveTimer) {
-    window.clearTimeout(saveTimer)
-    saveTimer = undefined
-  }
-  await store.save()
-}
-
 const back = async (): Promise<void> => {
   await flushSave()
   screen.value = 'home'
@@ -474,17 +439,10 @@ const onStorage = (event: { key: string | null }): void => {
   showNotice('另一个标签页保存了这份简历，刷新可同步最新内容')
 }
 
-/** 防抖窗口内直接关页面会丢掉最后几次输入，这里拦一下（现代浏览器只看 preventDefault）。 */
-const onBeforeUnload = (event: Event): void => {
-  if (!dirty.value) return
-  event.preventDefault()
-}
-
 onMounted(() => {
   void store.init()
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('storage', onStorage)
-  window.addEventListener('beforeunload', onBeforeUnload)
   // 组件里抛的错 / 未 catch 的 promise 统一在这里露个面，而不是只进 console
   stopErrorListener = onUnexpectedError((message) => {
     showNotice(`出了点意外：${message}`)
@@ -500,9 +458,7 @@ watch(screen, async () => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeyDown)
   window.removeEventListener('storage', onStorage)
-  window.removeEventListener('beforeunload', onBeforeUnload)
   stopErrorListener?.()
-  if (saveTimer) window.clearTimeout(saveTimer)
   if (importSourceUrl.value) URL.revokeObjectURL(importSourceUrl.value)
 })
 </script>
