@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: monthly
     open-pull-requests-limit: 5
+    # Tiptap 的各个包要求版本完全一致（@tiptap/pm 是 peer），分开升会装出两份 core，
+    # 类型直接报 "Extension is not assignable to AnyExtension"。必须打包成一个 PR。
+    groups:
+      tiptap:
+        patterns:
+          - '@tiptap/*'
     ignore:
       # typescript-eslint 和 vue-tsc 还不支持 TS 6.1+，等它们跟上再手动升
       - dependency-name: typescript
