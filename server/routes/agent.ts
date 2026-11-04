@@ -93,11 +93,6 @@ const streamGraph = async (
   }
 }
 
-/** 关闭服务时清掉进程内的会话，避免状态跟着下一个请求串台。 */
-export const resetAgentSessions = async (): Promise<void> => {
-  await agentCheckpointer.deleteThread('*').catch(() => undefined)
-}
-
 export const registerAgentRoute = (server: FastifyInstance): void => {
   server.post('/api/agent/run', async (request, reply) => {
     const parsed = runSchema.safeParse(request.body ?? {})
