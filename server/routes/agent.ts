@@ -4,7 +4,11 @@ import { Command } from '@langchain/langgraph'
 import { z } from 'zod'
 import { withAiSlot } from '../shared/aiLimiter.js'
 import { friendlyAiError } from '../services/aiStable.js'
-import { agentCheckpointer, buildAgentGraph } from '../services/agentGraph/graph.js'
+import {
+  agentCheckpointer,
+  buildAgentGraph,
+  trackAgentSession,
+} from '../services/agentGraph/graph.js'
 
 const providerSchema = z.enum(['ollama', 'deepseek'])
 
@@ -112,6 +116,7 @@ export const registerAgentRoute = (server: FastifyInstance): void => {
     }
 
     const threadId = parsed.data.threadId ?? randomUUID()
+    await trackAgentSession(threadId)
     await streamGraph(
       reply,
       graph,
@@ -151,7 +156,7 @@ export const registerAgentRoute = (server: FastifyInstance): void => {
     )
   })
 
-  /** 会话状态：前端刷新后可以据此恢复多轮对话。 */
+  /** 会话状态：服务没有重启时，前端刷新后可以据此恢复多轮对话。 */
   server.get('/api/agent/session/:threadId', async (request, reply) => {
     const params = z.object({ threadId: z.string().uuid() }).safeParse(request.params)
     if (!params.success) return reply.code(400).send({ message: '会话 id 不正确' })

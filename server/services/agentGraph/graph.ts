@@ -54,6 +54,25 @@ const checkpointer = new MemorySaver()
 
 export const agentCheckpointer = checkpointer
 
+/**
+ * 进程内最多保留的会话数。
+ *
+ * MemorySaver 没有过期时间，服务一直开着时每个 thread_id 都会占内存；
+ * 这里按创建顺序只保留最近 50 个，超出后删掉最旧的（本地单用户足够用）。
+ */
+export const MAX_AGENT_SESSIONS = 50
+const trackedSessions: string[] = []
+
+/** 登记一个新会话；超过上限时按创建顺序淘汰最旧的。 */
+export const trackAgentSession = async (threadId: string): Promise<void> => {
+  if (trackedSessions.includes(threadId)) return
+  trackedSessions.push(threadId)
+  while (trackedSessions.length > MAX_AGENT_SESSIONS) {
+    const oldest = trackedSessions.shift()
+    if (oldest) await checkpointer.deleteThread(oldest)
+  }
+}
+
 const emitStep = (step: AgentStep): void => {
   getWriter()?.({ type: 'step', step })
 }
