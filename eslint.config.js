@@ -1,4 +1,5 @@
 import eslint from '@eslint/js'
+import globals from 'globals'
 import vue from 'eslint-plugin-vue'
 import tseslint from 'typescript-eslint'
 import vueParser from 'vue-eslint-parser'
@@ -20,26 +21,6 @@ export default tseslint.config(
   {
     files: ['**/*.ts', '**/*.vue'],
     languageOptions: {
-      globals: {
-        AbortController: 'readonly',
-        AbortSignal: 'readonly',
-        Blob: 'readonly',
-        BlobPart: 'readonly',
-        Element: 'readonly',
-        Event: 'readonly',
-        File: 'readonly',
-        FormData: 'readonly',
-        HTMLElement: 'readonly',
-        HTMLInputElement: 'readonly',
-        HTMLSelectElement: 'readonly',
-        KeyboardEvent: 'readonly',
-        ResizeObserver: 'readonly',
-        URL: 'readonly',
-        document: 'readonly',
-        fetch: 'readonly',
-        getComputedStyle: 'readonly',
-        window: 'readonly',
-      },
       parserOptions: {
         ecmaVersion: 'latest',
         sourceType: 'module',
@@ -61,11 +42,24 @@ export default tseslint.config(
     },
   },
   {
-    // 本地验证脚本跑在 Node 里，不是浏览器环境
-    files: ['scripts/**/*.mjs'],
-    rules: {
-      // 本地验证脚本跑在 Node 里，不引 globals 包，直接关掉未定义检查
-      'no-undef': 'off',
+    // 浏览器侧代码
+    files: ['src/**/*.{ts,vue}'],
+    languageOptions: {
+      globals: { ...globals.browser },
+    },
+  },
+  {
+    // 服务端、构建脚本和根目录配置文件跑在 Node 里
+    files: ['server/**/*.ts', 'scripts/**/*.mjs', '*.config.{js,ts}'],
+    languageOptions: {
+      globals: { ...globals.node },
+    },
+  },
+  {
+    // 测试同时用到 DOM 和 Node 能力
+    files: ['tests/**/*.{ts,vue}'],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
     },
   },
   {

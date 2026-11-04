@@ -1,5 +1,3 @@
-/* global console */
-
 import { existsSync } from 'node:fs'
 import process from 'node:process'
 import { chromium } from 'playwright'
