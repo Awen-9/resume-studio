@@ -33,7 +33,7 @@ It is intentionally designed for personal local use. There is no login, payment,
 
 - OCR for scanned/image-only PDFs (status detection is ready; recognition requires installing Tesseract)
 - Cloud sync, accounts, sharing links, payments, or remote storage
-- Cloud AI, ATS scoring, application tracking, or career assessments (all AI runs on a local model)
+- Cloud AI, ATS scoring, application tracking, or career assessments (AI runs on a local Ollama by default; choosing DeepSeek sends the resume and JD to DeepSeek's servers)
 - Desktop sidecar binary (the current desktop build depends on a system Node runtime)
 - Docker image or hosted deployment
 
@@ -83,11 +83,11 @@ npm run format:check # Prettier check
 
 ## Data and Privacy
 
-Resume data stays in the browser's IndexedDB on the current computer. The application has no remote upload logic. PDF/Word import, export, and AI requests go only to the local `127.0.0.1` services. Use the in-app JSON backup before moving to another computer; never commit that backup, a personal PDF, screenshots, or `.env` to GitHub.
+Resume data stays in the browser's IndexedDB on the current computer. PDF/Word import, export, and AI requests go to the local `127.0.0.1` services by default; only when DeepSeek is selected in Settings does the local service forward the resume and JD to DeepSeek. Use the in-app JSON backup before moving to another computer; never commit that backup, a personal PDF, screenshots, or `.env` to GitHub.
 
 ## Local AI (optional)
 
-AI rewrite and the JD matcher call [Ollama](https://ollama.com/) on the same machine, so resume content never leaves it:
+By default, AI rewrite and the JD matcher call [Ollama](https://ollama.com/) on the same machine, so resume content never leaves it. If you switch to DeepSeek in Settings, the resume and JD are sent to DeepSeek's servers.
 
 ```bash
 ollama serve
@@ -99,6 +99,7 @@ curl http://127.0.0.1:4173/api/ai/status   # {"available":true,...} means ready
 - Deep matching checks keywords one by one and quotes the source line, so it can take 30–60 seconds on an 8B model. Cancel it from the dialog, or just close the dialog, and the request is aborted.
 - AI requests are queued locally (one at a time) so two jobs do not fight over the same GPU.
 - Override the endpoint and model with `OLLAMA_URL` and `OLLAMA_MODEL` in `.env`.
+- The DeepSeek API key is stored only in this browser's `localStorage` (`resume-studio.ai-settings.v1`); it is never written to the repository, backups, or logs.
 
 ## Troubleshooting
 
