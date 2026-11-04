@@ -1,4 +1,5 @@
 import { TYPE_RATIO, sizeExpr } from './typography.js'
+import { escapeHtml } from './escapeHtml.js'
 import { emphasizeLeadInHtml } from './leadIn.js'
 import { getEffectiveTheme } from './pagination.js'
 import { stripHtml } from './validation.js'
@@ -34,14 +35,6 @@ export const configureRichHtmlSanitizer = (impl: (value: string) => string): voi
 export const sanitizeRichHtml = (value: string): string => sanitizeRichHtmlImpl(value)
 
 /** HTML 转义，防止用户输入的内容破坏文档结构或注入脚本。 */
-const escapeHtml = (value: string): string => {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
 
 /** 收集个人联系方式字段（电话、邮箱、地点、网站），过滤空值。 */
 const profileFields = (document: ResumeDocument): string[] => {

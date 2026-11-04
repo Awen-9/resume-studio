@@ -11,6 +11,7 @@
  * 解析结果是「尽力而为」的启发式处理，无法保证对所有简历版式完全准确，
  * 因此返回结果会携带 {@link ResumeImportResult.warnings}，由导入确认页兜底人工修订。
  */
+import { escapeHtml } from './escapeHtml.js'
 import type { ResumeDocument, ResumeItem, ResumeSection, SectionType } from './model.js'
 
 const DEFAULT_IMPORT_THEME = {
@@ -151,15 +152,6 @@ const normalizeCjkRadicals = (value: string): string =>
  */
 const collapseCjkSpaces = (value: string): string =>
   value.replace(CJK_GAP_PATTERN, '$1').replace(CJK_END_GAP_PATTERN, '$1')
-
-const escapeHtml = (value: string): string => {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;')
-    .replaceAll("'", '&#039;')
-}
 
 const normalizeLine = (line: string): string => {
   return collapseCjkSpaces(
